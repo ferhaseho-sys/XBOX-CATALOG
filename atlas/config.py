@@ -25,3 +25,20 @@ SEED_LOCALES = [
     "en-US", "en-GB", "ja-JP", "en-ZA", "en-IN", "tr-TR", "pt-BR",
     "es-AR", "ru-RU", "de-DE", "ko-KR", "zh-TW", "pl-PL", "es-MX",
 ]
+
+# Mercados a PRECIFICAR: uno representativo por MONEDA distinta (~50). Guardar
+# mas es guardar duplicados (toda la Eurozona = mismo precio EUR; decenas de
+# paises chicos = mismo USD). Los ~190 restantes se expanden en la web via
+# mapa pais->moneda, sin ocupar espacio en la DB.
+# DE = representante EUR ; US = representante USD.
+PRICING_MARKETS = [
+    "US", "DE", "GB",                                  # USD, EUR, GBP
+    "AR", "BR", "MX", "CL", "CO", "PE", "UY",          # LatAm
+    "TR", "RU", "UA", "PL", "CZ", "HU", "RO", "BG",    # Europa del este
+    "SE", "NO", "DK", "CH", "IS",                      # Europa (moneda propia)
+    "IN", "ID", "TH", "VN", "MY", "PH", "SG",          # Asia SE/Sur
+    "JP", "KR", "TW", "HK", "CN",                      # Asia este
+    "AU", "NZ", "CA",                                  # Oceania/Norteamerica
+    "ZA", "NG", "EG", "KE",                            # Africa
+    "SA", "AE", "QA", "KW", "IL", "KZ",                # Medio Oriente/Asia central
+]

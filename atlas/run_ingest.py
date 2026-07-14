@@ -14,28 +14,43 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from . import config, db
 from .http_client import CatalogClient
-from .markets import MARKETS
 from .discovery import discover_ids
 from .pricing import fetch_metadata, fetch_prices_for_market
 
 
+def _incremental_upserter(conn):
+    """Callback que hace upsert de cada lote y acumula el total (con progreso)."""
+    state = {"n": 0}
+
+    def _on_batch(metas):
+        state["n"] += db.upsert_products(conn, metas)
+        print(f"[db] products acumulados: {state['n']}", flush=True)
+
+    return state, _on_batch
+
+
 def phase_discovery(conn, client):
-    ids = sorted(discover_ids())
-    print(f"[discovery] universo = {len(ids)} ProductIDs. Poblando metadata inicial...")
-    # metadata inicial para tener filas en products (necesario para el FK de prices)
-    metas = fetch_metadata(client, ids)
-    n = db.upsert_products(conn, metas)
-    db.log_run(conn, "discovery", None, "done", n, f"{len(ids)} ids")
-    print(f"[discovery] {n} products upserted")
+    universe = discover_ids()
+    done = db.known_product_ids(conn)          # resumible: saltea lo ya cargado
+    ids = sorted(universe - done)
+    print(f"[discovery] universo={len(universe)} | ya en DB={len(done)} | faltan={len(ids)}",
+          flush=True)
+    if not ids:
+        print("[discovery] nada pendiente, ya esta completo", flush=True)
+        return
+    state, on_batch = _incremental_upserter(conn)
+    fetch_metadata(client, ids, on_batch=on_batch)
+    db.log_run(conn, "discovery", None, "done", state["n"], f"{len(ids)} ids nuevos")
+    print(f"[discovery] {state['n']} products upserted", flush=True)
 
 
 def phase_metadata(conn, client):
     ids = sorted(db.known_product_ids(conn))
     print(f"[metadata] refrescando {len(ids)} products")
-    metas = fetch_metadata(client, ids)
-    n = db.upsert_products(conn, metas)
-    db.log_run(conn, "metadata", None, "done", n)
-    print(f"[metadata] {n} products actualizados")
+    state, on_batch = _incremental_upserter(conn)
+    fetch_metadata(client, ids, on_batch=on_batch)
+    db.log_run(conn, "metadata", None, "done", state["n"])
+    print(f"[metadata] {state['n']} products actualizados")
 
 
 def _price_one_market(client, market):
@@ -72,7 +87,8 @@ def main(argv):
         print(__doc__)
         return
     phase = argv[0]
-    markets = [m.upper() for m in argv[1:]] or MARKETS
+    # sin mercados explicitos => set representativo por moneda (~50), no los 243
+    markets = [m.upper() for m in argv[1:]] or config.PRICING_MARKETS
     client = CatalogClient(rate=config.REQ_RATE)
     conn = db.connect()
     try:

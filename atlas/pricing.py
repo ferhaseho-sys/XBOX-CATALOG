@@ -11,16 +11,25 @@ def _chunks(seq, n):
         yield seq[i:i + n]
 
 
-def fetch_metadata(client: CatalogClient, ids: list[str], progress=print) -> list[dict]:
+def fetch_metadata(client: CatalogClient, ids: list[str], progress=print,
+                   on_batch=None) -> list[dict]:
     """Fase 2: metadata canonica (market=US) para poblar `products`.
     La metadata (titulo, imagenes, Markets[]) llega igual aunque el juego no se
-    venda en US, asi que un solo pase cubre todo el universo."""
+    venda en US, asi que un solo pase cubre todo el universo.
+
+    Si se pasa `on_batch(list_metas)`, se llama por cada lote (upsert incremental)
+    y NO se acumula en memoria; devuelve [] en ese caso."""
     out = []
     total = len(ids)
     for i, chunk in enumerate(_chunks(ids, config.BATCH_SIZE), 1):
         prods = client.batch(chunk, market="US", locale="en-US")
-        out.extend(parse_product(p, "US") for p in prods)
-        progress(f"[metadata] lote {i} ({min(i*config.BATCH_SIZE, total)}/{total}) +{len(prods)}")
+        metas = [parse_product(p, "US") for p in prods]
+        progress(f"[metadata] lote {i}/{-(-total // config.BATCH_SIZE)} "
+                 f"({min(i*config.BATCH_SIZE, total)}/{total}) +{len(metas)}")
+        if on_batch is not None:
+            on_batch(metas)
+        else:
+            out.extend(metas)
     return out
 
 
