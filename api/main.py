@@ -15,6 +15,11 @@ app = FastAPI(title="Xbox Price Atlas", version="0.1.0")
 WEB = Path(__file__).resolve().parent.parent / "web"
 
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 @app.get("/api/stats")
 def api_stats():
     return Q.stats()

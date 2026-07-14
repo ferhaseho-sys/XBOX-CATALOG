@@ -42,8 +42,24 @@ displaycatalog API ──▶  pricing   ──▶  prices (product_id × market,
 - Es **resumible**: cada fase hace upsert idempotente y registra en `ingest_runs`.
   Se puede correr por tandas de mercados.
 
-## Pendiente (siguientes pasos)
+## Deploy (Railway + Supabase)
 
-- `fx.py`: cargar `fx_rates` y calcular `price_usd`.
-- API de lectura (FastAPI/Flask) + frontend: rankings, ficha con mapa de precios,
-  cobertura/rareza, mayor spread mundial.
+Un solo repo, **dos servicios** en el mismo proyecto de Railway:
+
+1. **Servicio web (API + frontend)** — usa `railway.json`:
+   `uvicorn api.main:app` con healthcheck en `/health`.
+2. **Servicio cron (refresco diario)** — mismo repo, *Custom Start Command*:
+   `python -m atlas.refresh` y un *Cron Schedule* (ej. `0 6 * * *`).
+
+Variables de entorno (ambos servicios): `DATABASE_URL` (pooler Supabase :6543),
+`REQ_RATE`, `BATCH_SIZE`, `MARKET_WORKERS`. En el cron, opcional
+`MARKETS_REFRESH=US,GB,AR,...` para limitar los mercados del refresco.
+
+La primera carga (`discovery` + `pricing` completo de 243 mercados) conviene
+correrla a mano una vez: `railway run python -m atlas.run_ingest discovery`, etc.
+
+## API
+
+`/api/search?term=` · `/api/cheapest?market=US` · `/api/deals?market=US` ·
+`/api/exclusives?max_markets=5` · `/api/spread` · `/api/product/{id}` ·
+`/api/stats` · `/api/markets` · `/health`
