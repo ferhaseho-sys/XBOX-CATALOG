@@ -40,14 +40,18 @@ def upsert_rates(conn, rates: dict[str, float]) -> int:
 
 
 def recalc_price_usd(conn) -> int:
-    """price_usd = list_price * fx_rates.usd_rate (match por moneda)."""
-    sql = (
-        "update prices p set price_usd = round(p.list_price * f.usd_rate, 2) "
-        "from fx_rates f where f.currency = p.currency and p.list_price is not null"
-    )
+    """price_usd = list_price * fx_rates.usd_rate (match por moneda), en prices y variants."""
     with conn.cursor() as cur:
-        cur.execute(sql)
+        cur.execute(
+            "update prices p set price_usd = round(p.list_price * f.usd_rate, 2) "
+            "from fx_rates f where f.currency = p.currency and p.list_price is not null"
+        )
         n = cur.rowcount
+        # las variantes (subs) tambien
+        cur.execute(
+            "update variants v set price_usd = round(v.list_price * f.usd_rate, 2) "
+            "from fx_rates f where f.currency = v.currency and v.list_price is not null"
+        )
     conn.commit()
     return n
 

@@ -19,6 +19,11 @@ PRICE_COLS = [
     "on_sale", "sale_ends", "is_free", "n_paid_offers", "recurrence",
 ]
 
+VARIANT_COLS = [
+    "product_id", "market", "sku_id", "title", "duration", "is_hidden",
+    "is_recurring", "purchasable", "currency", "list_price",
+]
+
 
 def connect():
     if not config.DATABASE_URL:
@@ -59,6 +64,21 @@ def upsert_prices(conn, prices: list[dict]) -> int:
     updates = ", ".join(f"{c}=excluded.{c}" for c in PRICE_COLS if c not in ("product_id", "market"))
     sql = (f"insert into prices ({', '.join(PRICE_COLS)}) values %s "
            f"on conflict (product_id, market) do update set {updates}, updated_at=now()")
+    with conn.cursor() as cur:
+        execute_values(cur, sql, rows, page_size=500)
+    conn.commit()
+    return len(rows)
+
+
+def upsert_variants(conn, variants: list[dict]) -> int:
+    """Guarda TODAS las variantes (SKUs) de un producto por mercado."""
+    rows = [_row(v, VARIANT_COLS) for v in variants if v.get("sku_id")]
+    if not rows:
+        return 0
+    updates = ", ".join(f"{c}=excluded.{c}" for c in VARIANT_COLS
+                        if c not in ("product_id", "market", "sku_id"))
+    sql = (f"insert into variants ({', '.join(VARIANT_COLS)}) values %s "
+           f"on conflict (product_id, market, sku_id) do update set {updates}, updated_at=now()")
     with conn.cursor() as cur:
         execute_values(cur, sql, rows, page_size=500)
     conn.commit()

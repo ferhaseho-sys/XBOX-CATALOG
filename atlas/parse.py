@@ -97,6 +97,44 @@ def parse_price(product: dict, market: str) -> dict:
     }
 
 
+def parse_variants(product: dict, market: str) -> list[dict]:
+    """TODAS las variantes (SKUs) de un producto: duraciones, promos, ocultas.
+    Para el drill-down 'ver producto -> ver sus variantes'. No filtra nada:
+    el precio principal (parse_price) es el titular; esto es el menu completo."""
+    pid = product.get("ProductId")
+    out = []
+    for dsa in product.get("DisplaySkuAvailabilities", []) or []:
+        sku = dsa.get("Sku", {}) or {}
+        skp = sku.get("Properties", {}) or {}
+        slp = (sku.get("LocalizedProperties") or [{}])[0]
+        rp = sku.get("RecurrencePolicy") or {}
+        dur = rp.get("Duration") or {}
+        price = cur = None
+        purchasable = False
+        for av in dsa.get("Availabilities", []) or []:
+            acts = av.get("Actions") or []
+            pr = (av.get("OrderManagementData", {}) or {}).get("Price", {}) or {}
+            if "Purchase" in acts:
+                purchasable = True
+            if pr.get("ListPrice") is not None and price is None:
+                price = pr.get("ListPrice"); cur = pr.get("CurrencyCode")
+        title = slp.get("SkuTitle") or slp.get("SkuButtonTitle") or sku.get("SkuId")
+        out.append({
+            "product_id": pid,
+            "market": market,
+            "sku_id": sku.get("SkuId"),
+            "title": title,
+            "duration": (f"{dur.get('Units')} {dur.get('UnitType')}"
+                         if dur.get("Units") else None),
+            "is_hidden": bool(skp.get("IsSubscriptionHidden")),
+            "is_recurring": bool(rp.get("IsRecurring")),
+            "purchasable": purchasable,
+            "currency": cur,
+            "list_price": (round(float(price), 2) if price is not None else None),
+        })
+    return out
+
+
 def parse_product(product: dict, market: str = "US") -> dict:
     pid = product.get("ProductId")
     props = product.get("Properties", {}) or {}

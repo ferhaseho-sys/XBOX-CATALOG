@@ -12,7 +12,7 @@ from __future__ import annotations
 from . import config, db
 from .http_client import CatalogClient
 from .markets import locale_for
-from .parse import parse_product, parse_price
+from .parse import parse_product, parse_price, parse_variants
 
 
 def seed_known(conn, client) -> int:
@@ -44,22 +44,24 @@ def main():
     print(f"[subs] {len(ids)} suscripciones a precificar en {len(config.PRICING_MARKETS)} mercados",
           flush=True)
 
-    # 2) fetch de todos los mercados (solo HTTP, sin DB) -> acumular
+    # 2) fetch de todos los mercados (solo HTTP, sin DB) -> acumular precio + variantes
     all_rows = []
+    all_variants = []
     for m in config.PRICING_MARKETS:
         prods = client.batch(ids, market=m, locale=locale_for(m))
-        rows = [parse_price(p, m) for p in prods]
-        all_rows.extend(rows)
-        n_buy = sum(1 for r in rows if r.get("purchasable"))
-        print(f"[subs] {m}: {n_buy} comprables", flush=True)
+        all_rows.extend(parse_price(p, m) for p in prods)
+        for p in prods:
+            all_variants.extend(parse_variants(p, m))
+        print(f"[subs] {m}: {len(prods)} productos", flush=True)
 
-    # 3) un solo upsert al final (conexion fresca, sin idle durante el HTTP)
+    # 3) upsert al final (conexion fresca, sin idle durante el HTTP)
     conn = db.connect()
     try:
         total = db.upsert_prices(conn, all_rows)
+        nv = db.upsert_variants(conn, all_variants)
     finally:
         conn.close()
-    print(f"[subs] LISTO: {total} precios de suscripciones", flush=True)
+    print(f"[subs] LISTO: {total} precios + {nv} variantes de suscripciones", flush=True)
 
 
 if __name__ == "__main__":
