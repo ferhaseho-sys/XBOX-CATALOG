@@ -59,4 +59,6 @@ def discover_ids(progress=print) -> set[str]:
             progress(f"[discovery] {i}/{len(urls)} +{len(got)} (union={len(ids)})")
         except Exception as e:
             progress(f"[discovery] fallo {u}: {e}")
+    # subs conocidas que no estan en sitemaps (Fortnite Crew, etc.)
+    ids |= set(config.KNOWN_SUBSCRIPTIONS)
     return ids

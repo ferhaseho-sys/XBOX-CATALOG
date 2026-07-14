@@ -16,7 +16,7 @@ PRODUCT_COLS = [
 
 PRICE_COLS = [
     "product_id", "market", "currency", "list_price", "msrp", "discount_pct",
-    "on_sale", "sale_ends", "is_free", "n_paid_offers",
+    "on_sale", "sale_ends", "is_free", "n_paid_offers", "recurrence",
 ]
 
 
@@ -72,10 +72,16 @@ def known_product_ids(conn) -> set[str]:
 
 
 def products_for_market(conn, market: str) -> list[str]:
-    """IDs cuyo available_markets incluye `market` (evita pedir precios donde
-    el producto ni se distribuye)."""
+    """IDs a precificar en `market`: los distribuidos ahi (available_markets) MAS
+    todas las suscripciones (PASS). Los PASS reportan available_markets=[US] mal
+    desde US, asi que se precian en todos los mercados y la API decide si estan
+    disponibles (los no comprables se descartan en upsert_prices)."""
     with conn.cursor() as cur:
-        cur.execute("select product_id from products where %s = any(available_markets)", (market,))
+        cur.execute(
+            "select product_id from products "
+            "where %s = any(available_markets) or product_type = 'PASS'",
+            (market,),
+        )
         return [r[0] for r in cur.fetchall()]
 
 

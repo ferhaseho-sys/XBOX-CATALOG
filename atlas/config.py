@@ -49,3 +49,10 @@ PRICING_MARKETS = [
     "ZA", "NG", "EG", "KE",                            # Africa
     "SA", "AE", "QA", "KW", "IL", "KZ",                # Medio Oriente/Asia central
 ]
+
+# Suscripciones conocidas que NO estan en los sitemaps de juegos (Xbox no las
+# sitemapea). Se siembran a mano; la lista se puede ampliar a medida que aparezcan.
+# (El discovery completo de subs seria recorrer los add-ons de cada juego.)
+KNOWN_SUBSCRIPTIONS = [
+    "CFQ7TTC0L23L",   # Fortnite Crew
+]

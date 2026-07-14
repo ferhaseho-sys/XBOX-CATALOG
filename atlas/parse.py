@@ -29,8 +29,19 @@ def _purchasable_prices(product: dict) -> list[dict]:
     preferred = product.get("PreferredSkuId")
     for dsa in product.get("DisplaySkuAvailabilities", []) or []:
         sku = dsa.get("Sku", {}) or {}
+        skp = sku.get("Properties", {}) or {}
         if (sku.get("SkuType") or "").lower() == "trial":
             continue
+        # suscripciones: saltear SKUs ocultos (promos "2 months for $2", trials,
+        # variantes legacy) para no tomar un precio irreal como el principal.
+        if skp.get("IsSubscriptionHidden"):
+            continue
+        # recurrencia (subs): esta en Sku.RecurrencePolicy
+        rp = sku.get("RecurrencePolicy") or {}
+        dur = rp.get("Duration") or {}
+        recurrence = None
+        if rp.get("IsRecurring"):
+            recurrence = f"{dur.get('Units', 1)} {dur.get('UnitType', 'Month')}"
         for av in dsa.get("Availabilities", []) or []:
             if "Purchase" not in (av.get("Actions") or []):
                 continue
@@ -46,6 +57,7 @@ def _purchasable_prices(product: dict) -> list[dict]:
                 "start": cond.get("StartDate"),
                 "end": end,
                 "on_sale_window": bool(end) and not end.startswith(PERMANENT_END),
+                "recurrence": recurrence,   # ej. "1 Month" para subs; None si no recurre
             })
     return out
 
@@ -81,6 +93,7 @@ def parse_price(product: dict, market: str) -> dict:
         "is_free": is_free,
         "n_offers": len(offers),
         "n_paid_offers": len(paid),
+        "recurrence": best.get("recurrence"),   # "1 Month" para subs; None si no
     }
 
 

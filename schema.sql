@@ -51,6 +51,7 @@ create table if not exists prices (
     sale_ends      timestamptz,
     is_free        boolean,
     n_paid_offers  int,
+    recurrence     text,            -- "1 Month" para suscripciones (PASS); null si no
     price_usd      numeric(12,2),   -- list_price convertido con fx_rates
     updated_at     timestamptz default now(),
     primary key (product_id, market)
