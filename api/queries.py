@@ -105,6 +105,37 @@ def product_prices(product_id: str) -> list[dict]:
     )
 
 
+def subscriptions(limit: int = 100) -> list[dict]:
+    """Todas las suscripciones (PASS) con su precio titular mas barato (USD)."""
+    return q(
+        "select p.product_id, p.title, p.publisher, p.image_boxart, "
+        "min(pr.price_usd) as min_usd, count(distinct pr.market) as n_markets, "
+        "max(pr.recurrence) as recurrence "
+        "from products p join prices pr using (product_id) "
+        "where p.product_type = 'PASS' and pr.price_usd is not null and pr.list_price > 0 "
+        "group by p.product_id, p.title, p.publisher, p.image_boxart "
+        "order by min_usd asc limit %s",
+        (limit,),
+    )
+
+
+def product_variants(product_id: str, market: str) -> list[dict]:
+    """Variantes (duraciones/promos) de un producto en un mercado, con precio."""
+    return q(
+        "select sku_id, title, duration, is_hidden, is_recurring, purchasable, "
+        "currency, list_price, price_usd from variants "
+        "where product_id = %s and market = %s and list_price > 0 "
+        "order by price_usd asc nulls last",
+        (product_id, market.upper()),
+    )
+
+
+def cheapest_market_for(product_id: str) -> str | None:
+    r = q("select market from prices where product_id = %s and price_usd is not null "
+          "and list_price > 0 order by price_usd asc limit 1", (product_id,))
+    return r[0]["market"] if r else None
+
+
 def markets_list() -> list[dict]:
     return q("select market, count(*) as n, round(avg(price_usd),2) as avg_usd "
              "from prices where price_usd is not null group by market order by market")

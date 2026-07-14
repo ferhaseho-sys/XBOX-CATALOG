@@ -81,6 +81,7 @@
       <button data-view="deals">Ofertas</button>
       <button data-view="exclusives">Exclusivos</button>
       <button data-view="spread">Spread mundial</button>
+      <button data-view="subs">Suscripciones</button>
     </nav>
   </div>
 </header>
@@ -123,13 +124,16 @@ const CONTROLS = {
   cheapest: () => marketSelect(),
   deals: () => marketSelect(),
   exclusives: () => `<label class="muted">Máx. mercados</label><select id="maxm">${[1,2,3,5,10,20].map(n=>`<option ${n===5?'selected':''}>${n}</option>`).join('')}</select><span class="muted">← menor = más raro</span>`,
-  spread: () => `<span class="muted">Mismo juego, mayor diferencia de precio entre países (≥5 mercados).</span>`
+  spread: () => `<span class="muted">Mismo juego, mayor diferencia de precio entre países (≥5 mercados).</span>`,
+  subs: () => `<span class="muted">Suscripciones (Game Pass, EA Play, Fortnite Crew…) al precio más barato del mundo. Abrí una para ver todas sus variantes.</span>`
 };
 
 function card(g){
   const disc = g.discount_pct>0 ? `<span class="badge b-disc">-${g.discount_pct}%</span>` : '';
   const rare = g.n_available_markets!=null && g.n_available_markets<=10 ? `<span class="badge b-rare">${g.n_available_markets} 🌍</span>` : '';
-  const price = g.spread_usd!=null
+  const price = g.recurrence!=null
+      ? `<span class="price">${usd(g.min_usd)}</span><span class="muted" style="font-size:.75rem"> /${g.recurrence}</span>`
+      : g.spread_usd!=null
       ? `<span class="price">${usd(g.min_usd)}–${usd(g.max_usd)}</span>`
       : (g.is_free ? `<span class="badge b-free">Free</span>` : `<span class="price">${usd(g.price_usd)}</span>`);
   const cover = g.image_boxart || '';
@@ -154,6 +158,7 @@ async function render(){
     else if(view==='deals') data=await api('/api/deals?market='+market);
     else if(view==='exclusives') data=await api('/api/exclusives?max_markets='+($('#maxm')?.value||5));
     else if(view==='spread') data=await api('/api/spread');
+    else if(view==='subs') data=await api('/api/subscriptions');
   }catch(e){ empty.textContent='No se pudo cargar (¿DB conectada?).'; empty.style.display='block'; return; }
   if(!data.length){ empty.textContent='Sin resultados.'; empty.style.display='block'; return; }
   grid.innerHTML=data.map(card).join('');
@@ -180,8 +185,23 @@ async function openProduct(id){
       <div class="pm-wrap"><table class="pm-table">
         <thead><tr><th>Mercado</th><th style="text-align:right">Local</th><th style="text-align:right">USD</th><th style="text-align:right">Desc</th></tr></thead>
         <tbody>${rows||'<tr><td colspan=4 class="muted">Sin precios cargados aún.</td></tr>'}</tbody>
-      </table></div>`;
+      </table></div>
+      ${variantsBlock(p)}`;
   }catch(e){ sheet.innerHTML='<div class="empty">Error al cargar el producto.</div>'; }
+}
+
+function variantsBlock(p){
+  const v=p.variants||[];
+  if(!v.length) return '';
+  const rows=v.map(x=>`<tr>
+      <td>${x.title||x.sku_id}${x.is_hidden?' <span class="badge b-rare" style="font-size:.65rem">oculta</span>':''}${x.is_recurring?' <span class="badge" style="font-size:.65rem">♻ recurrente</span>':''}</td>
+      <td class="num">${(x.currency||'')+' '+(x.list_price??'—')}</td>
+      <td class="num">${usd(x.price_usd)}</td></tr>`).join('');
+  return `<div style="padding:14px 18px 4px"><b>Variantes</b> <span class="muted">(en ${flag(p.variants_market)} ${p.variants_market} — el más barato)</span></div>
+    <div class="pm-wrap"><table class="pm-table">
+      <thead><tr><th>Variante</th><th style="text-align:right">Local</th><th style="text-align:right">USD</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
 }
 
 $('#modal').onclick=e=>{ if(e.target.id==='modal') e.target.classList.remove('open'); };

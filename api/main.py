@@ -55,12 +55,21 @@ def api_markets():
     return Q.markets_list()
 
 
+@app.get("/api/subscriptions")
+def api_subscriptions(limit: int = 100):
+    return Q.subscriptions(min(limit, 300))
+
+
 @app.get("/api/product/{product_id}")
-def api_product(product_id: str):
+def api_product(product_id: str, market: str | None = None):
     p = Q.product(product_id)
     if not p:
         raise HTTPException(404, "producto no encontrado")
     p["prices"] = Q.product_prices(product_id)
+    # variantes (duraciones/promos) del mercado mas barato, o el pedido
+    vmarket = (market or Q.cheapest_market_for(product_id) or "US").upper()
+    p["variants"] = Q.product_variants(product_id, vmarket)
+    p["variants_market"] = vmarket
     return p
 
 
