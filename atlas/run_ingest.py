@@ -12,10 +12,11 @@ Es resumible: cada fase hace upsert idempotente y registra en ingest_runs.
 from __future__ import annotations
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 from . import config, db
 from .http_client import CatalogClient
 from .discovery import discover_ids
-from .pricing import fetch_metadata, fetch_prices_for_market
+from .pricing import fetch_metadata, fetch_price_chunk, market_chunks
 
 
 def _incremental_upserter(conn):
@@ -53,33 +54,55 @@ def phase_metadata(conn, client):
     print(f"[metadata] {state['n']} products actualizados")
 
 
-def _price_one_market(client, market):
-    """Worker: abre su propia conexion (psycopg2 no es thread-safe por conexion)."""
-    conn = db.connect()
-    try:
-        ids = db.products_for_market(conn, market)
-        if not ids:
-            db.log_run(conn, "pricing", market, "done", 0, "sin ids")
-            return market, 0
-        prices = fetch_prices_for_market(client, ids, market)
-        n = db.upsert_prices(conn, prices)
-        db.log_run(conn, "pricing", market, "done", n)
-        return market, n
-    except Exception as e:
-        db.log_run(conn, "pricing", market, "error", 0, str(e))
-        return market, -1
-    finally:
-        conn.close()
+def phase_pricing(conn, client, markets):
+    """Cola plana: TODOS los lotes de los 48 mercados en un solo pool de fetchers.
+    Los workers solo descargan+parsean (I/O + parse); el hilo principal hace el
+    upsert incremental con UNA conexion (sin locks ni contencion en Postgres, ya
+    que cada fila es de un mercado distinto). Evita la cola de espera por mercados
+    grandes que tenia el modelo 1-worker-por-mercado."""
+    t0 = time.monotonic()
+    # 1) armar todas las tareas (market, chunk) leyendo los ids una vez por mercado
+    tasks = []
+    pending = {}   # market -> lotes restantes
+    for m in markets:
+        ids = db.products_for_market(conn, m)
+        chunks = list(market_chunks(ids, m))
+        if not chunks:
+            db.log_run(conn, "pricing", m, "done", 0, "sin ids")
+            continue
+        pending[m] = len(chunks)
+        tasks.extend(chunks)
+    print(f"[pricing] {len(pending)} mercados, {len(tasks)} lotes, "
+          f"{config.WORKERS} workers, batch={config.BATCH_SIZE}", flush=True)
 
-
-def phase_pricing(client, markets):
-    print(f"[pricing] {len(markets)} mercados, {config.MARKET_WORKERS} en paralelo")
-    with ThreadPoolExecutor(max_workers=config.MARKET_WORKERS) as ex:
-        futs = {ex.submit(_price_one_market, client, m): m for m in markets}
+    counts = {m: 0 for m in pending}
+    total_rows = 0
+    done_lotes = 0
+    with ThreadPoolExecutor(max_workers=config.WORKERS) as ex:
+        futs = {ex.submit(fetch_price_chunk, client, m, chunk): m
+                for (m, chunk) in tasks}
         for fut in as_completed(futs):
-            market, n = fut.result()
-            status = "ERROR" if n < 0 else f"{n} precios"
-            print(f"[pricing] {market}: {status}")
+            m = futs[fut]
+            try:
+                rows = fut.result()
+            except Exception as e:
+                rows = []
+                print(f"[pricing:{m}] lote error: {e}", flush=True)
+            n = db.upsert_prices(conn, rows)          # upsert incremental (hilo principal)
+            counts[m] += n
+            total_rows += n
+            done_lotes += 1
+            pending[m] -= 1
+            if pending[m] == 0:                        # mercado completo -> log
+                db.log_run(conn, "pricing", m, "done", counts[m])
+                print(f"[pricing] {m}: {counts[m]} precios", flush=True)
+            if done_lotes % 25 == 0:
+                dt = time.monotonic() - t0
+                print(f"[pricing] {done_lotes}/{len(tasks)} lotes, "
+                      f"{total_rows} precios, {dt:.0f}s", flush=True)
+    dt = time.monotonic() - t0
+    print(f"[pricing] LISTO: {total_rows} precios en {dt:.0f}s "
+          f"({len(tasks)} lotes)", flush=True)
 
 
 def main(argv):
@@ -97,7 +120,7 @@ def main(argv):
         if phase == "metadata":
             phase_metadata(conn, client)
         if phase in ("pricing", "all"):
-            phase_pricing(client, markets)
+            phase_pricing(conn, client, markets)
     finally:
         conn.close()
     print("listo.")

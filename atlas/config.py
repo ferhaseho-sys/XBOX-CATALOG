@@ -11,10 +11,17 @@ except Exception:
 # Connection string (usar el "Connection pooler" / puerto 6543 para workers).
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
-# Ritmo de peticiones a la API (req/seg) y concurrencia de mercados.
-REQ_RATE = float(os.environ.get("REQ_RATE", "6"))
-BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "150"))
-MARKET_WORKERS = int(os.environ.get("MARKET_WORKERS", "4"))
+# --- Rendimiento de ingesta ---
+# REQ_RATE es el TECHO global de req/seg (anti-429), no un freno; la concurrencia
+# es el motor. WORKERS = conexiones HTTP concurrentes (cola plana de lotes).
+# Pensado para correr en RAILWAY (sin el proxy TLS local que topa a ~340 KB/s).
+REQ_RATE = float(os.environ.get("REQ_RATE", "20"))
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "400"))       # la API acepta ~500
+WORKERS = int(os.environ.get("WORKERS", os.environ.get("MARKET_WORKERS", "24")))
+HTTP_TIMEOUT = int(os.environ.get("HTTP_TIMEOUT", "60"))    # lotes de 400 pueden tardar
+HTTP_POOL = int(os.environ.get("HTTP_POOL", "32"))          # debe ser >= WORKERS
+# compat: algunos modulos aun leen MARKET_WORKERS
+MARKET_WORKERS = WORKERS
 
 # Sitemaps
 SITEMAP_INDEX = "https://www.xbox.com/sitemap.xml"

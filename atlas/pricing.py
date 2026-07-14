@@ -33,15 +33,25 @@ def fetch_metadata(client: CatalogClient, ids: list[str], progress=print,
     return out
 
 
+def market_chunks(ids: list[str], market: str):
+    """Genera tareas (market, chunk) para la cola plana de pricing."""
+    for chunk in _chunks(ids, config.BATCH_SIZE):
+        yield market, chunk
+
+
+def fetch_price_chunk(client: CatalogClient, market: str, ids: list[str]) -> list[dict]:
+    """Un solo lote: descarga + parsea precios. Pensado para correr en un pool
+    de fetchers; NO toca la DB (el hilo principal hace el upsert)."""
+    prods = client.batch(ids, market=market, locale=locale_for(market))
+    return [parse_price(p, market) for p in prods]
+
+
 def fetch_prices_for_market(client: CatalogClient, ids: list[str], market: str,
                             progress=print) -> list[dict]:
-    """Fase 3: precios de un mercado. `ids` debe venir ya filtrado a los que se
-    distribuyen en ese mercado (db.products_for_market)."""
-    loc = locale_for(market)
+    """Version secuencial (se mantiene por compatibilidad)."""
     out = []
-    for chunk in _chunks(ids, config.BATCH_SIZE):
-        prods = client.batch(chunk, market=market, locale=loc)
-        out.extend(parse_price(p, market) for p in prods)
+    for _, chunk in market_chunks(ids, market):
+        out.extend(fetch_price_chunk(client, market, chunk))
     n_buy = sum(1 for p in out if p.get("purchasable"))
     progress(f"[pricing:{market}] {len(ids)} pedidos -> {n_buy} comprables")
     return out

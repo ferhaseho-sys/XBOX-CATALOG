@@ -21,12 +21,11 @@ def main():
         markets = CORE_MARKETS
     print(f"[refresh] mercados: {markets}")
 
-    client = CatalogClient(rate=config.REQ_RATE)
-    phase_pricing(client, markets)
-
-    # tasas de cambio + price_usd
+    client = CatalogClient()
     conn = db.connect()
     try:
+        phase_pricing(conn, client, markets)
+        # tasas de cambio + price_usd
         rates = fx.fetch_rates()
         fx.upsert_rates(conn, rates)
         n = fx.recalc_price_usd(conn)
