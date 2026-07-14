@@ -130,6 +130,17 @@ def product_variants(product_id: str, market: str) -> list[dict]:
     )
 
 
+def variant_world(product_id: str, sku_id: str) -> list[dict]:
+    """Una variante (SKU) especifica comparada en TODOS los paises, por USD."""
+    return q(
+        "select market, currency, list_price, price_usd, title "
+        "from variants where product_id = %s and sku_id = %s "
+        "and price_usd is not null and list_price > 0 "
+        "order by price_usd asc",
+        (product_id, sku_id),
+    )
+
+
 def cheapest_market_for(product_id: str) -> str | None:
     r = q("select market from prices where product_id = %s and price_usd is not null "
           "and list_price > 0 order by price_usd asc limit 1", (product_id,))

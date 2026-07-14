@@ -62,6 +62,8 @@
   .pm-table th,.pm-table td{padding:8px 14px;text-align:left;border-bottom:1px solid var(--border);font-size:.9rem}
   .pm-table th{color:var(--muted);font-weight:600;font-size:.75rem;text-transform:uppercase;position:sticky;top:0;background:var(--panel)}
   .pm-table td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .vrow{cursor:pointer;transition:.1s}
+  .vrow:hover td{background:rgba(77,163,255,.08)}
   .pm-wrap{max-height:50vh;overflow:auto}
   .close{margin-left:auto;background:var(--panel2);border:1px solid var(--border);color:var(--txt);
     width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:1.1rem}
@@ -193,15 +195,35 @@ async function openProduct(id){
 function variantsBlock(p){
   const v=p.variants||[];
   if(!v.length) return '';
-  const rows=v.map(x=>`<tr>
-      <td>${x.title||x.sku_id}${x.is_hidden?' <span class="badge b-rare" style="font-size:.65rem">oculta</span>':''}${x.is_recurring?' <span class="badge" style="font-size:.65rem">♻ recurrente</span>':''}</td>
+  const rows=v.map(x=>`<tr class="vrow" onclick="showVariant('${p.product_id}','${x.sku_id}')">
+      <td>${x.title||x.sku_id}${x.is_hidden?' <span class="badge b-rare" style="font-size:.65rem">oculta</span>':''}${x.is_recurring?' <span class="badge" style="font-size:.65rem">♻</span>':''}</td>
       <td class="num">${(x.currency||'')+' '+(x.list_price??'—')}</td>
-      <td class="num">${usd(x.price_usd)}</td></tr>`).join('');
-  return `<div style="padding:14px 18px 4px"><b>Variantes</b> <span class="muted">(en ${flag(p.variants_market)} ${p.variants_market} — el más barato)</span></div>
+      <td class="num">${usd(x.price_usd)} ›</td></tr>`).join('');
+  return `<div style="padding:14px 18px 4px"><b>Variantes</b> <span class="muted">(${flag(p.variants_market)} ${p.variants_market} — clic en una para comparar su precio por país)</span></div>
     <div class="pm-wrap"><table class="pm-table">
       <thead><tr><th>Variante</th><th style="text-align:right">Local</th><th style="text-align:right">USD</th></tr></thead>
       <tbody>${rows}</tbody>
-    </table></div>`;
+    </table></div>
+    <div id="vworld"></div>`;
+}
+
+window.showVariant = async (pid, sku) => {
+  const el = document.getElementById('vworld');
+  el.innerHTML = '<div class="empty" style="padding:20px">Cargando…</div>';
+  try{
+    const data = await api(`/api/variant-world?product_id=${pid}&sku_id=${encodeURIComponent(sku)}`);
+    if(!data.length){ el.innerHTML='<div class="muted" style="padding:10px 18px">Esta variante no tiene precio en otros países.</div>'; return; }
+    const title = data[0].title || sku;
+    const rows = data.map(r=>`<tr>
+        <td><span class="flag">${flag(r.market)}</span> ${r.market}</td>
+        <td class="num">${(r.currency||'')+' '+r.list_price}</td>
+        <td class="num">${usd(r.price_usd)}</td></tr>`).join('');
+    el.innerHTML = `<div style="padding:14px 18px 4px"><b>${title}</b> <span class="muted">— por país (${data.length} mercados, más barato arriba)</span></div>
+      <div class="pm-wrap"><table class="pm-table">
+        <thead><tr><th>Mercado</th><th style="text-align:right">Local</th><th style="text-align:right">USD</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`;
+    el.scrollIntoView({behavior:'smooth', block:'nearest'});
+  }catch(e){ el.innerHTML='<div class="empty" style="padding:20px">Error al comparar la variante.</div>'; }
 }
 
 $('#modal').onclick=e=>{ if(e.target.id==='modal') e.target.classList.remove('open'); };

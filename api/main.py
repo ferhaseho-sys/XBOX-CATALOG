@@ -60,6 +60,11 @@ def api_subscriptions(limit: int = 100):
     return Q.subscriptions(min(limit, 300))
 
 
+@app.get("/api/variant-world")
+def api_variant_world(product_id: str, sku_id: str):
+    return Q.variant_world(product_id, sku_id)
+
+
 @app.get("/api/product/{product_id}")
 def api_product(product_id: str, market: str | None = None):
     p = Q.product(product_id)
