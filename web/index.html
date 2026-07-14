@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Xbox Price Atlas — comparador mundial de precios</title>
+<style>
+  :root{
+    --bg:#0b0e13; --panel:#121722; --panel2:#0e131c; --border:#1f2836;
+    --txt:#e8eef6; --muted:#8695a8; --accent:#3ee08f; --accent2:#4da3ff;
+    --gold:#ffc23e; --danger:#ff5d6c; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 18px}
+  header{position:sticky;top:0;z-index:30;background:linear-gradient(180deg,#0b0e13,#0b0e13ee);
+    border-bottom:1px solid var(--border);backdrop-filter:blur(6px)}
+  .top{display:flex;align-items:center;gap:18px;padding:14px 0}
+  .logo{font-weight:800;font-size:1.15rem;letter-spacing:.3px}
+  .logo b{color:var(--accent)}
+  .stats{display:flex;gap:10px;margin-left:auto;flex-wrap:wrap}
+  .stat{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:6px 12px}
+  .stat .v{font-weight:700;font-variant-numeric:tabular-nums}
+  .stat .k{color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.4px}
+  nav{display:flex;gap:6px;padding:8px 0;flex-wrap:wrap}
+  nav button{background:var(--panel2);border:1px solid var(--border);color:var(--muted);
+    padding:8px 14px;border-radius:999px;cursor:pointer;font-size:.9rem;transition:.15s}
+  nav button.active{color:#04140c;background:var(--accent);border-color:var(--accent);font-weight:700}
+  .controls{display:flex;gap:10px;align-items:center;margin:16px 0;flex-wrap:wrap}
+  input,select{background:var(--panel);border:1px solid var(--border);color:var(--txt);
+    padding:10px 12px;border-radius:10px;font-size:.92rem;outline:none}
+  input:focus,select:focus{border-color:var(--accent2)}
+  input[type=search]{flex:1;min-width:220px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;padding-bottom:40px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+    overflow:hidden;cursor:pointer;transition:.15s;display:flex;flex-direction:column}
+  .card:hover{border-color:var(--accent2);transform:translateY(-2px)}
+  .card .cover{width:100%;aspect-ratio:1;object-fit:cover;background:#0a0d12}
+  .card .body{padding:10px 12px;display:flex;flex-direction:column;gap:6px;flex:1}
+  .card .title{font-weight:600;font-size:.92rem;line-height:1.2;max-height:2.4em;overflow:hidden}
+  .card .pub{color:var(--muted);font-size:.75rem}
+  .row{display:flex;align-items:center;gap:8px;margin-top:auto}
+  .price{font-weight:800;font-variant-numeric:tabular-nums}
+  .badge{font-size:.7rem;padding:2px 7px;border-radius:999px;border:1px solid var(--border)}
+  .b-disc{background:rgba(62,224,143,.12);color:var(--accent);border-color:transparent}
+  .b-rare{background:rgba(255,194,62,.12);color:var(--gold);border-color:transparent}
+  .b-free{background:rgba(77,163,255,.12);color:var(--accent2);border-color:transparent}
+  .muted{color:var(--muted)}
+  .empty{padding:60px 0;text-align:center;color:var(--muted)}
+  /* modal */
+  .modal{position:fixed;inset:0;background:#000a;display:none;z-index:50;align-items:flex-start;
+    justify-content:center;padding:40px 16px;overflow:auto}
+  .modal.open{display:flex}
+  .sheet{background:var(--panel);border:1px solid var(--border);border-radius:16px;
+    max-width:820px;width:100%;overflow:hidden}
+  .sheet .head{display:flex;gap:16px;padding:18px;border-bottom:1px solid var(--border)}
+  .sheet .head img{width:120px;height:120px;border-radius:12px;object-fit:cover}
+  .sheet h2{margin:0 0 6px}
+  .pm-table{width:100%;border-collapse:collapse}
+  .pm-table th,.pm-table td{padding:8px 14px;text-align:left;border-bottom:1px solid var(--border);font-size:.9rem}
+  .pm-table th{color:var(--muted);font-weight:600;font-size:.75rem;text-transform:uppercase;position:sticky;top:0;background:var(--panel)}
+  .pm-table td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .pm-wrap{max-height:50vh;overflow:auto}
+  .close{margin-left:auto;background:var(--panel2);border:1px solid var(--border);color:var(--txt);
+    width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:1.1rem}
+  .flag{font-size:1.05rem}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="top">
+      <div class="logo">Xbox <b>Price Atlas</b></div>
+      <div class="stats" id="stats"></div>
+    </div>
+    <nav id="nav">
+      <button data-view="search" class="active">Buscar</button>
+      <button data-view="cheapest">Más baratos</button>
+      <button data-view="deals">Ofertas</button>
+      <button data-view="exclusives">Exclusivos</button>
+      <button data-view="spread">Spread mundial</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="controls" id="controls"></div>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" style="display:none"></div>
+</main>
+
+<div class="modal" id="modal">
+  <div class="sheet" id="sheet"></div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const api = (p) => fetch(p).then(r => r.ok ? r.json() : Promise.reject(r.status));
+const usd = v => v==null ? '—' : '$'+Number(v).toFixed(2);
+const flag = cc => (cc && cc.length===2) ? String.fromCodePoint(...[...cc.toUpperCase()].map(c=>127397+c.charCodeAt(0))) : '';
+let market = 'US';
+let view = 'search';
+
+async function loadStats(){
+  try{
+    const s = await api('/api/stats');
+    $('#stats').innerHTML = [
+      ['Juegos', s.products], ['Mercados', s.markets],
+      ['Precios', s.price_rows], ['En oferta', s.on_sale]
+    ].map(([k,v])=>`<div class="stat"><div class="v">${Number(v||0).toLocaleString()}</div><div class="k">${k}</div></div>`).join('');
+  }catch(e){ $('#stats').innerHTML = '<div class="stat"><div class="k">sin conexión a DB</div></div>'; }
+}
+
+function marketSelect(){
+  const opts = ['US','GB','AR','TR','BR','NG','IN','JP','MX','ZA','DE','PL','UA','RU','CL','CO','TW','KR'];
+  return `<label class="muted">Mercado</label><select id="mkt">${opts.map(m=>`<option ${m===market?'selected':''}>${m}</option>`).join('')}</select>`;
+}
+
+const CONTROLS = {
+  search: () => `<input type="search" id="q" placeholder="Buscar juego por título…" autofocus>`,
+  cheapest: () => marketSelect(),
+  deals: () => marketSelect(),
+  exclusives: () => `<label class="muted">Máx. mercados</label><select id="maxm">${[1,2,3,5,10,20].map(n=>`<option ${n===5?'selected':''}>${n}</option>`).join('')}</select><span class="muted">← menor = más raro</span>`,
+  spread: () => `<span class="muted">Mismo juego, mayor diferencia de precio entre países (≥5 mercados).</span>`
+};
+
+function card(g){
+  const disc = g.discount_pct>0 ? `<span class="badge b-disc">-${g.discount_pct}%</span>` : '';
+  const rare = g.n_available_markets!=null && g.n_available_markets<=10 ? `<span class="badge b-rare">${g.n_available_markets} 🌍</span>` : '';
+  const price = g.spread_usd!=null
+      ? `<span class="price">${usd(g.min_usd)}–${usd(g.max_usd)}</span>`
+      : (g.is_free ? `<span class="badge b-free">Free</span>` : `<span class="price">${usd(g.price_usd)}</span>`);
+  const cover = g.image_boxart || '';
+  return `<div class="card" data-id="${g.product_id}">
+    <img class="cover" loading="lazy" src="${cover}" onerror="this.style.opacity=.15">
+    <div class="body">
+      <div class="title">${g.title||''}</div>
+      <div class="pub">${g.publisher||g.product_type||''}</div>
+      <div class="row">${price}${disc}${rare}
+        ${g.spread_usd!=null?`<span class="badge">Δ ${usd(g.spread_usd)}</span>`:''}
+      </div>
+    </div></div>`;
+}
+
+async function render(){
+  const grid = $('#grid'), empty = $('#empty');
+  grid.innerHTML=''; empty.style.display='none';
+  let data=[];
+  try{
+    if(view==='search'){ const q=$('#q')?.value.trim(); if(!q){ empty.textContent='Escribe para buscar…'; empty.style.display='block'; return;} data=await api('/api/search?term='+encodeURIComponent(q)); }
+    else if(view==='cheapest') data=await api('/api/cheapest?market='+market);
+    else if(view==='deals') data=await api('/api/deals?market='+market);
+    else if(view==='exclusives') data=await api('/api/exclusives?max_markets='+($('#maxm')?.value||5));
+    else if(view==='spread') data=await api('/api/spread');
+  }catch(e){ empty.textContent='No se pudo cargar (¿DB conectada?).'; empty.style.display='block'; return; }
+  if(!data.length){ empty.textContent='Sin resultados.'; empty.style.display='block'; return; }
+  grid.innerHTML=data.map(card).join('');
+  grid.querySelectorAll('.card').forEach(c=>c.onclick=()=>openProduct(c.dataset.id));
+}
+
+async function openProduct(id){
+  const sheet=$('#sheet'); sheet.innerHTML='<div class="empty">Cargando…</div>'; $('#modal').classList.add('open');
+  try{
+    const p=await api('/api/product/'+id);
+    const rows=(p.prices||[]).map(r=>`<tr>
+      <td><span class="flag">${flag(r.market)}</span> ${r.market}</td>
+      <td class="num">${r.is_free?'Free':(r.currency||'')+' '+(r.list_price??'—')}</td>
+      <td class="num">${usd(r.price_usd)}</td>
+      <td class="num">${r.discount_pct>0?'-'+r.discount_pct+'%':''}</td></tr>`).join('');
+    sheet.innerHTML=`<div class="head">
+        <img src="${p.image_boxart||p.image_hero||''}" onerror="this.style.opacity=.15">
+        <div><h2>${p.title||''}</h2>
+          <div class="muted">${p.publisher||''} · ${p.product_type||''} · ${p.release_date||''}</div>
+          <div class="muted">${p.avg_rating?('★ '+p.avg_rating+' ('+p.rating_count+')'):''} · en ${p.n_available_markets} mercados</div>
+        </div>
+        <button class="close" onclick="$('#modal').classList.remove('open')">✕</button>
+      </div>
+      <div class="pm-wrap"><table class="pm-table">
+        <thead><tr><th>Mercado</th><th style="text-align:right">Local</th><th style="text-align:right">USD</th><th style="text-align:right">Desc</th></tr></thead>
+        <tbody>${rows||'<tr><td colspan=4 class="muted">Sin precios cargados aún.</td></tr>'}</tbody>
+      </table></div>`;
+  }catch(e){ sheet.innerHTML='<div class="empty">Error al cargar el producto.</div>'; }
+}
+
+$('#modal').onclick=e=>{ if(e.target.id==='modal') e.target.classList.remove('open'); };
+
+function setView(v){
+  view=v;
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
+  $('#controls').innerHTML=CONTROLS[v]();
+  const q=$('#q'); if(q){ q.oninput=debounce(render,300); }
+  const mk=$('#mkt'); if(mk){ mk.onchange=()=>{market=mk.value; render();}; }
+  const mm=$('#maxm'); if(mm){ mm.onchange=render; }
+  render();
+}
+function debounce(fn,ms){let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms);};}
+
+document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>setView(b.dataset.view));
+loadStats(); setView('search');
+</script>
+</body>
+</html>
