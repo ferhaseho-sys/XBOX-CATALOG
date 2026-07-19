@@ -8,9 +8,18 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from . import queries as Q
 
 app = FastAPI(title="Xbox Price Atlas", version="0.1.0")
+
+# CORS: permitir que el frontend (Vite dev en :5173, o el desplegado) llame a la API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 WEB = Path(__file__).resolve().parent.parent / "web"
 
@@ -18,6 +27,52 @@ WEB = Path(__file__).resolve().parent.parent / "web"
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# ==== Análisis / actualización del catálogo (lo que antes era "scraping") ====
+# Corre la etapa inicial completa: sitemaps -> catálogo -> precios -> USD.
+# Es una acción ocasional (semanal), en segundo plano, con estado consultable.
+import threading
+
+_ingest = {"running": False, "phase": "idle", "detail": "", "started_at": None}
+
+
+def _run_analysis(markets=None):
+    from atlas import run_ingest, fx, db, config
+    from atlas.http_client import CatalogClient
+    import time as _t
+    _ingest.update(running=True, phase="discovery",
+                   detail="Analizando sitemaps y catálogo…", started_at=_t.time())
+    try:
+        client = CatalogClient()
+        conn = db.connect()
+        try:
+            run_ingest.phase_discovery(conn, client)
+            _ingest.update(phase="pricing", detail="Obteniendo precios por mercado…")
+            run_ingest.phase_pricing(conn, client, markets or config.PRICING_MARKETS)
+        finally:
+            conn.close()
+        _ingest.update(phase="fx", detail="Convirtiendo a USD…")
+        fx.main()
+        _ingest.update(phase="done", detail="Análisis completo.")
+    except Exception as e:
+        _ingest.update(phase="error", detail=str(e)[:300])
+    finally:
+        _ingest["running"] = False
+
+
+@app.post("/api/analysis/start")
+def analysis_start():
+    """Dispara el análisis completo del catálogo (sitemaps + precios)."""
+    if _ingest["running"]:
+        return {"status": "already_running", **_ingest}
+    threading.Thread(target=_run_analysis, daemon=True).start()
+    return {"status": "started"}
+
+
+@app.get("/api/analysis/status")
+def analysis_status():
+    return _ingest
 
 
 @app.get("/api/stats")
@@ -78,11 +133,23 @@ def api_product(product_id: str, market: str | None = None):
     return p
 
 
-# ---- frontend ----
+# ---- frontend (app React de Figma, build en frontend/) ----
+FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
+_INDEX = (FRONTEND / "index.html") if (FRONTEND / "index.html").exists() else (WEB / "index.html")
+
+# assets del build de Vite (/assets/index-xxx.js , .css)
+if (FRONTEND / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND / "assets")), name="assets")
+
+
 @app.get("/")
 def index():
-    return FileResponse(WEB / "index.html")
+    return FileResponse(_INDEX)
 
 
-if (WEB).exists():
-    app.mount("/static", StaticFiles(directory=str(WEB)), name="static")
+# fallback SPA: cualquier ruta que no sea /api ni un asset devuelve el index
+@app.get("/{full_path:path}")
+def spa_fallback(full_path: str):
+    if full_path.startswith("api/") or full_path.startswith("assets/"):
+        raise HTTPException(404)
+    return FileResponse(_INDEX)
