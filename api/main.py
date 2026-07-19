@@ -87,7 +87,7 @@ def api_search(term: str = Query(..., min_length=1), limit: int = 40):
 
 @app.get("/api/cheapest")
 def api_cheapest(market: str = "US", limit: int = 50):
-    return Q.cheapest(market, min(limit, 200))
+    return Q.cheapest(market, min(limit, 5000))
 
 
 @app.get("/api/deals")
