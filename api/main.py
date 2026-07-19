@@ -133,6 +133,23 @@ def api_product(product_id: str, market: str | None = None):
     return p
 
 
+@app.get("/api/games")
+def api_games(limit: int = 2000, offset: int = 0):
+    """Catálogo paginado (carga progresiva desde el cliente)."""
+    return Q.all_games(min(limit, 5000), max(offset, 0))
+
+
+# cliente HTTP compartido para las consultas en vivo (se crea una sola vez)
+_live_client = {"c": None}
+
+
+def _get_live_client():
+    if _live_client["c"] is None:
+        from atlas.http_client import CatalogClient
+        _live_client["c"] = CatalogClient()
+    return _live_client["c"]
+
+
 @app.get("/api/markets/all")
 def api_markets_all():
     """Los 242 mercados disponibles (para el selector de regiones)."""
@@ -151,7 +168,7 @@ def api_live_product(product_id: str, markets: str = ""):
     from concurrent.futures import ThreadPoolExecutor
 
     codes = [m.strip().upper() for m in markets.split(",") if m.strip()] or MARKETS
-    client = CatalogClient()
+    client = _get_live_client()
     rates = Q.fx_rates_map()
     title = {"v": None}
 

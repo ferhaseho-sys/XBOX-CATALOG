@@ -25,6 +25,19 @@ def q(sql: str, args: tuple = ()) -> list[dict]:
         p.putconn(conn)
 
 
+def all_games(limit: int = 2000, offset: int = 0) -> list[dict]:
+    """Catálogo paginado (con precio US si existe), ordenado por popularidad."""
+    return q(
+        "select p.product_id, p.title, p.image_boxart, p.publisher, p.developer, "
+        "p.product_type, p.avg_rating, p.n_available_markets, "
+        "pr.currency, pr.list_price, pr.price_usd, pr.discount_pct "
+        "from products p "
+        "left join prices pr on pr.product_id = p.product_id and pr.market = 'US' "
+        "order by p.rating_count desc nulls last limit %s offset %s",
+        (limit, offset),
+    )
+
+
 def fx_rates_map() -> dict:
     """{CURRENCY: usd_rate} desde fx_rates, para convertir precios en vivo."""
     return {r["currency"]: float(r["usd_rate"]) for r in q("select currency, usd_rate from fx_rates")}
