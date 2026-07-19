@@ -25,6 +25,11 @@ def q(sql: str, args: tuple = ()) -> list[dict]:
         p.putconn(conn)
 
 
+def fx_rates_map() -> dict:
+    """{CURRENCY: usd_rate} desde fx_rates, para convertir precios en vivo."""
+    return {r["currency"]: float(r["usd_rate"]) for r in q("select currency, usd_rate from fx_rates")}
+
+
 def stats() -> dict:
     r = q("select "
           "(select count(*) from products) as products, "

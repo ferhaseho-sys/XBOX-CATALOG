@@ -133,6 +133,55 @@ def api_product(product_id: str, market: str | None = None):
     return p
 
 
+@app.get("/api/markets/all")
+def api_markets_all():
+    """Los 242 mercados disponibles (para el selector de regiones)."""
+    from atlas.markets import MARKETS, locale_for
+    return [{"code": m, "locale": locale_for(m)} for m in MARKETS]
+
+
+@app.get("/api/live/product/{product_id}")
+def api_live_product(product_id: str, markets: str = ""):
+    """Consulta EN VIVO a Microsoft el precio de un producto en los mercados
+    pedidos (por defecto los 242), concurrente, con conversión a USD.
+    Permite explorar cualquier producto en cualquier región sin pre-guardar."""
+    from atlas.http_client import CatalogClient
+    from atlas.parse import parse_price
+    from atlas.markets import MARKETS, locale_for
+    from concurrent.futures import ThreadPoolExecutor
+
+    codes = [m.strip().upper() for m in markets.split(",") if m.strip()] or MARKETS
+    client = CatalogClient()
+    rates = Q.fx_rates_map()
+    title = {"v": None}
+
+    def one(mk):
+        prods = client.batch([product_id], market=mk, locale=locale_for(mk))
+        if not prods:
+            return None
+        p = prods[0]
+        if title["v"] is None:
+            try:
+                title["v"] = p.get("LocalizedProperties", [{}])[0].get("ProductTitle")
+            except Exception:
+                pass
+        pr = parse_price(p, mk)
+        if not pr.get("purchasable"):
+            return None
+        lp, cur = pr.get("list_price"), pr.get("currency")
+        if lp is not None and cur in rates:
+            pr["price_usd"] = round(lp * rates[cur], 2)
+        return pr
+
+    out = []
+    with ThreadPoolExecutor(max_workers=20) as ex:
+        for r in ex.map(one, codes):
+            if r:
+                out.append(r)
+    out.sort(key=lambda x: (x.get("price_usd") is None, x.get("price_usd") or 1e18))
+    return {"product_id": product_id, "title": title["v"], "n_markets": len(out), "prices": out}
+
+
 # ---- frontend (app React de Figma, build en frontend/) ----
 FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
 _INDEX = (FRONTEND / "index.html") if (FRONTEND / "index.html").exists() else (WEB / "index.html")
