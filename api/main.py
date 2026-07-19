@@ -162,8 +162,7 @@ def api_live_product(product_id: str, markets: str = ""):
     """Consulta EN VIVO a Microsoft el precio de un producto en los mercados
     pedidos (por defecto los 242), concurrente, con conversión a USD.
     Permite explorar cualquier producto en cualquier región sin pre-guardar."""
-    from atlas.http_client import CatalogClient
-    from atlas.parse import parse_price
+    from atlas.parse import parse_price, parse_variants
     from atlas.markets import MARKETS, locale_for
     from concurrent.futures import ThreadPoolExecutor
 
@@ -172,31 +171,39 @@ def api_live_product(product_id: str, markets: str = ""):
     rates = Q.fx_rates_map()
     title = {"v": None}
 
+    def to_usd(row):
+        lp, cur = row.get("list_price"), row.get("currency")
+        if lp is not None and cur in rates:
+            row["price_usd"] = round(lp * rates[cur], 2)
+        return row
+
     def one(mk):
         prods = client.batch([product_id], market=mk, locale=locale_for(mk))
         if not prods:
-            return None
+            return None, []
         p = prods[0]
         if title["v"] is None:
             try:
                 title["v"] = p.get("LocalizedProperties", [{}])[0].get("ProductTitle")
             except Exception:
                 pass
+        # variantes/denominaciones (SKUs) comprables de ESTE mercado, con USD
+        variants = [to_usd(v) for v in parse_variants(p, mk)
+                    if v.get("purchasable") and v.get("list_price")]
         pr = parse_price(p, mk)
-        if not pr.get("purchasable"):
-            return None
-        lp, cur = pr.get("list_price"), pr.get("currency")
-        if lp is not None and cur in rates:
-            pr["price_usd"] = round(lp * rates[cur], 2)
-        return pr
+        price = to_usd(pr) if pr.get("purchasable") else None
+        return price, variants
 
-    out = []
+    prices, all_variants = [], []
     with ThreadPoolExecutor(max_workers=20) as ex:
-        for r in ex.map(one, codes):
-            if r:
-                out.append(r)
-    out.sort(key=lambda x: (x.get("price_usd") is None, x.get("price_usd") or 1e18))
-    return {"product_id": product_id, "title": title["v"], "n_markets": len(out), "prices": out}
+        for price, variants in ex.map(one, codes):
+            if price:
+                prices.append(price)
+            all_variants.extend(variants)
+    prices.sort(key=lambda x: (x.get("price_usd") is None, x.get("price_usd") or 1e18))
+    all_variants.sort(key=lambda x: (x.get("price_usd") is None, x.get("price_usd") or 1e18))
+    return {"product_id": product_id, "title": title["v"],
+            "n_markets": len(prices), "prices": prices, "variants": all_variants}
 
 
 # ---- frontend (app React de Figma, build en frontend/) ----
