@@ -45,6 +45,35 @@ def all_games(limit: int = 1000, after: str = "") -> list[dict]:
     )
 
 
+def catalog_page(limit: int = 20, after: str = "") -> list[dict]:
+    """Página del catálogo estilo xbox-now: cada juego con su precio US Y el de la
+    región más barata (2 columnas). Keyset por product_id = IO liviano."""
+    games = q(
+        "select p.product_id, p.title, p.image_boxart, p.publisher, p.developer, "
+        "p.product_type, p.console_gen, p.has_addons, p.release_date, p.short_desc, "
+        "pr.currency as us_currency, pr.list_price as us_list, pr.msrp as us_msrp, "
+        "pr.price_usd as us_usd, pr.discount_pct as us_disc, pr.on_sale as us_onsale "
+        "from products p "
+        "left join prices pr on pr.product_id = p.product_id and pr.market = 'US' "
+        "where p.product_id > %s order by p.product_id limit %s",
+        (after, limit),
+    )
+    if not games:
+        return []
+    ids = [g["product_id"] for g in games]
+    cheapest = q(
+        "select distinct on (product_id) product_id, market, currency, list_price, "
+        "price_usd, discount_pct, on_sale, sale_ends from prices "
+        "where product_id = any(%s) and price_usd is not null and list_price > 0 "
+        "order by product_id, price_usd asc",
+        (ids,),
+    )
+    cmap = {c["product_id"]: c for c in cheapest}
+    for g in games:
+        g["cheapest"] = cmap.get(g["product_id"])
+    return games
+
+
 def fx_rates_map() -> dict:
     """{CURRENCY: usd_rate} desde fx_rates, para convertir precios en vivo."""
     return {r["currency"]: float(r["usd_rate"]) for r in q("select currency, usd_rate from fx_rates")}

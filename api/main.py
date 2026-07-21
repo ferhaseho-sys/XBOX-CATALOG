@@ -139,6 +139,12 @@ def api_games(limit: int = 1000, after: str = ""):
     return Q.all_games(min(limit, 2000), after)
 
 
+@app.get("/api/catalog")
+def api_catalog(limit: int = 24, after: str = ""):
+    """Catálogo estilo xbox-now: US + región más barata por juego, keyset."""
+    return Q.catalog_page(min(limit, 60), after)
+
+
 # cliente HTTP compartido para las consultas en vivo (se crea una sola vez)
 _live_client = {"c": None}
 
