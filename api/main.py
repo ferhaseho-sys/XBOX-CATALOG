@@ -145,6 +145,12 @@ def api_catalog(limit: int = 24, after: str = ""):
     return Q.catalog_page(min(limit, 60), after)
 
 
+@app.get("/api/fx")
+def api_fx():
+    """Tasas {moneda: usd_rate} para convertir precios a la moneda elegida."""
+    return Q.fx_rates_map()
+
+
 # cliente HTTP compartido para las consultas en vivo (se crea una sola vez)
 _live_client = {"c": None}
 
