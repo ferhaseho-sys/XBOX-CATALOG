@@ -12,10 +12,12 @@ con su precio en US y en la región más barata, ordenado por mejor oferta.
 
 ## 2. Dónde vive todo
 
-- **Repo (deploy):** https://github.com/ferhaseho-sys/XBOX-CATALOG — dueño `ferhaseho-sys`.
-  Carpeta local: `C:\Users\User\Desktop\Python\Python\xbox-price-atlas` (Python backend + API + build del frontend).
-- **Repo (frontend fuente):** `C:\Users\User\Desktop\Python\Python\XboxNow Professional Scraper Web Application`
-  (app React/Vite exportada de Figma; su propio git). **No tiene remoto**, solo local.
+- **Repo único (deploy):** https://github.com/ferhaseho-sys/XBOX-CATALOG — dueño `ferhaseho-sys`.
+  Carpeta local: `C:\Users\User\Desktop\Python\Python\xbox-price-atlas`. Contiene TODO:
+  backend Python (`atlas/`), API (`api/`), fuente del frontend (`frontend-src/`) y su
+  build (`frontend/`, servido por FastAPI). **Monorepo** desde jul-2026 (ver §4).
+- **Backup histórico del frontend:** `C:\Users\User\Desktop\Python\Python\XboxNow Professional Scraper Web Application`
+  (app React/Vite ex-Figma, git local sin remoto). Ya NO se desarrolla ahí; solo backup.
 - **App en vivo:** https://web-production-2b5be.up.railway.app (Railway).
 - **Base de datos:** Supabase (proyecto `qvwtvjbxzdmfrmmdueoo`), **plan free NANO**.
 
@@ -44,15 +46,20 @@ Endpoints clave: `/api/catalog` (ordenable, desde `deals`), `/api/product/{id}`,
 `GameCards.tsx` (catálogo estilo xbox-now), `RegionalPriceExplorer`, `XboxProductViewer`,
 `VariantExplorer`, `GameTable`. Apunta a la API vía `VITE_ATLAS_API` (`.env.production`).
 
-## 4. Flujo de build/deploy (IMPORTANTE)
+## 4. Flujo de build/deploy (IMPORTANTE) — MONOREPO
 
-El frontend React se compila y se **copia** al repo Python, que Railway sirve:
+Desde jul-2026 el proyecto es **un solo repo**: el fuente del frontend vive en
+`frontend-src/` (movido desde el viejo repo Figma) y Vite compila **directo** a
+`frontend/` (`build.outDir` en `frontend-src/vite.config.ts`). Ya no se copia a mano.
 ```
-cd "XboxNow Professional Scraper Web Application" && npm run build   # -> dist/
-cp -r dist/* ../xbox-price-atlas/frontend/
-cd ../xbox-price-atlas && git add -A && git commit -m "..." && git push   # Railway redespliega
+cd frontend-src && npm run build      # -> escribe en ../frontend/ (lo que Railway sirve)
+cd .. && git add -A && git commit -m "..." && git push   # Railway redespliega
 ```
-(Committear también el repo del frontend como backup.)
+- `frontend-src/node_modules/` está gitignored; se commitea **el build** (`frontend/`).
+- El viejo repo `XboxNow Professional Scraper Web Application` queda solo como
+  backup histórico; el desarrollo del frontend ahora es acá, en `frontend-src/`.
+- El build en Windows genera `frontend/index.html` con CRLF (ruido cosmético en el
+  diff; el contenido no cambia).
 
 ## 5. Cómo correr / operar
 

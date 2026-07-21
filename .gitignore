@@ -7,3 +7,9 @@ venv/
 data/
 
 *.ndjson
+
+# Frontend (monorepo): el fuente vive en frontend-src/, el build en frontend/.
+# Se commitea el build (frontend/) pero NUNCA las dependencias ni el dist local.
+frontend-src/node_modules/
+frontend-src/dist/
+frontend-src/.vite/
