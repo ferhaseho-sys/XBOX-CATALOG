@@ -79,6 +79,29 @@ cd ../xbox-price-atlas && git add -A && git commit -m "..." && git push   # Rail
 - **Python 3.14 local / 3.12 Railway** (`.python-version` fija 3.12). `psycopg2-binary==2.9.12`
   y `orjson==3.11.9` (tienen wheels para ambos).
 
+## 6b. Categorización — hallazgos (análisis de los 43k, jul-2026)
+
+Herramienta: **`atlas/dump.py`** baja los 43k JSON crudos a `dump_us.ndjson` en ~6 min
+(NDJSON, ~1.4GB, gitignored). `analyze.py` los agrega. Úsalo para cualquier análisis.
+
+Distribución real (US): **Durable 21.830 (51%!) · Game 18.921 (44%) · Consumable 2.313 · PASS 16.**
+Más de la MITAD del catálogo son **DLC/add-ons**, no juegos.
+
+**Bug del "free" (ya corregido en `parse.py`, falta aplicar a la DB):** la lógica vieja
+marcaba `is_free` para cualquier `$0`. De 2.449 así: 538 demos + 1.199 DLC/consumibles $0
++ solo **712 F2P reales**. Fix: `is_free` solo si `ProductType=='Game'` **y** no demo
+(`Properties.IsDemo` o título con "demo/trial edition"). Helpers `parse.is_demo()` y
+`parse.category()` (Juego/DLC/Moneda/Suscripción/Gift card). **3.303 delisted** (sin `Purchase`)
+ya se excluyen bien.
+
+**TAREA PENDIENTE (P0): aplicar el fix a los datos vivos** (el `parse.py` ya está bien, pero
+la DB tiene datos viejos):
+1. Schema: columnas `is_demo` bool + `category` text en `products`.
+2. Poblar desde el dump (bulk-update offline, NO re-ingestar → ahorra IO): leer `dump_us.ndjson`,
+   calcular is_demo/category por producto, `UPDATE products`. Y `UPDATE prices SET is_free=false
+   WHERE product_id IN (productos no-Game o demo)`.
+3. Frontend (`GameCards`): mostrar categoría + badge Demo; "Free" solo si `is_free` real.
+
 ## 7. Roadmap (pendiente, priorizado)
 
 **Alto valor:**
