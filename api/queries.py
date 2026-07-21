@@ -74,6 +74,37 @@ def catalog_page(limit: int = 20, after: str = "") -> list[dict]:
     return games
 
 
+def catalog_deals(sort: str = "savings", limit: int = 24, offset: int = 0,
+                  min_savings: int = 0) -> list[dict]:
+    """Catálogo ordenable desde el resumen `deals` (index-scan liviano).
+    sort: savings (mayor ahorro), cheapest (más barato USD), name."""
+    order = {
+        "savings": "d.savings_pct desc, d.product_id",
+        "cheapest": "d.cheapest_usd asc nulls last, d.product_id",
+        "name": "p.title asc",
+    }.get(sort, "d.savings_pct desc, d.product_id")
+    rows = q(
+        "select p.product_id, p.title, p.image_boxart, p.publisher, p.product_type, "
+        "p.console_gen, p.has_addons, p.release_date, p.short_desc, "
+        "d.us_usd, d.cheapest_market, d.cheapest_currency, d.cheapest_list, "
+        "d.cheapest_usd, d.savings_pct, d.on_sale, d.sale_ends "
+        "from deals d join products p using (product_id) "
+        "where d.savings_pct >= %s "
+        f"order by {order} limit %s offset %s",
+        (min_savings, min(limit, 60), offset),
+    )
+    for r in rows:
+        r["us_currency"] = "USD"
+        r["us_list"] = r.get("us_usd")
+        r["us_disc"] = 0
+        r["cheapest"] = {
+            "market": r.pop("cheapest_market"), "currency": r.pop("cheapest_currency"),
+            "list_price": r.pop("cheapest_list"), "price_usd": r.pop("cheapest_usd"),
+            "discount_pct": 0, "on_sale": r.pop("on_sale"), "sale_ends": r.pop("sale_ends"),
+        }
+    return rows
+
+
 def fx_rates_map() -> dict:
     """{CURRENCY: usd_rate} desde fx_rates, para convertir precios en vivo."""
     return {r["currency"]: float(r["usd_rate"]) for r in q("select currency, usd_rate from fx_rates")}

@@ -30,6 +30,9 @@ def main():
         fx.upsert_rates(conn, rates)
         n = fx.recalc_price_usd(conn)
         print(f"[refresh] FX ok, {n} filas con price_usd")
+        # resumen de ofertas (para ordenar el catálogo por mejor deal)
+        from . import deals
+        deals.main()
     finally:
         conn.close()
     print("[refresh] listo")

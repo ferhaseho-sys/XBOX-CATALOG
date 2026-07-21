@@ -140,9 +140,10 @@ def api_games(limit: int = 1000, after: str = ""):
 
 
 @app.get("/api/catalog")
-def api_catalog(limit: int = 24, after: str = ""):
-    """Catálogo estilo xbox-now: US + región más barata por juego, keyset."""
-    return Q.catalog_page(min(limit, 60), after)
+def api_catalog(sort: str = "savings", page: int = 1, min_savings: int = 0, limit: int = 24):
+    """Catálogo estilo xbox-now, ordenable por mejor oferta (desde `deals`)."""
+    page = max(page, 1)
+    return Q.catalog_deals(sort, min(limit, 60), (page - 1) * min(limit, 60), min_savings)
 
 
 @app.get("/api/fx")
