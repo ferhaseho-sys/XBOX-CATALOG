@@ -10,7 +10,13 @@ _pool: SimpleConnectionPool | None = None
 def pool() -> SimpleConnectionPool:
     global _pool
     if _pool is None:
-        _pool = SimpleConnectionPool(1, 8, dsn=config.DATABASE_URL)
+        # Pool chico + timeouts para no saturar el pooler de Supabase (free tier)
+        # ni colgar requests: si la DB no responde, la query falla en ~15-20s.
+        _pool = SimpleConnectionPool(
+            1, 3, dsn=config.DATABASE_URL,
+            connect_timeout=10,
+            options="-c statement_timeout=20000",
+        )
     return _pool
 
 
