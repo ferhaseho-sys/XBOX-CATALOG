@@ -60,6 +60,27 @@ create index if not exists idx_prices_market   on prices (market);
 create index if not exists idx_prices_usd       on prices (price_usd);
 create index if not exists idx_prices_discount  on prices (discount_pct);
 
+-- ============ Variantes / SKUs (denominaciones, duraciones, promos) ============
+-- Todas las variantes comprables de un producto por mercado (gift cards, subs,
+-- monedas). El precio "titular" vive en `prices`; esto es el menú completo.
+-- Nota: sin FK a products (a diferencia de prices/deals) — refleja la tabla viva.
+create table if not exists variants (
+    product_id    text not null,
+    market        text not null,
+    sku_id        text not null,
+    title         text,
+    duration      text,            -- "1 Month", "12 Month" (subs); null si no aplica
+    is_hidden     boolean,         -- IsSubscriptionHidden (promos/trials ocultos)
+    is_recurring  boolean,         -- suscripción recurrente
+    purchasable   boolean,
+    currency      text,
+    list_price    numeric(12,2),
+    price_usd     numeric(12,2),   -- list_price convertido con fx_rates
+    updated_at    timestamptz default now(),
+    primary key (product_id, market, sku_id)
+);
+create index if not exists idx_variants_product on variants (product_id);
+
 -- ============ Tasas de cambio (para normalizar a USD) ============
 create table if not exists fx_rates (
     currency    text primary key,
@@ -80,3 +101,24 @@ create table if not exists ingest_runs (
     detail       text
 );
 create index if not exists idx_ingest_phase_market on ingest_runs (phase, market);
+
+-- ============ Resumen de ofertas precalculado (1 fila por producto) ============
+-- Región más barata + ahorro% vs US, para ordenar/filtrar el catálogo con un
+-- index-scan liviano (clave en free-tier). La mantiene `atlas/deals.py` (que
+-- corre este mismo DDL con `create if not exists` y la rellena tras cada refresh);
+-- se documenta acá para tener el esquema completo en un solo lugar.
+create table if not exists deals (
+    product_id         text primary key references products(product_id) on delete cascade,
+    cheapest_market    text,
+    cheapest_currency  text,
+    cheapest_list      numeric(12,2),
+    cheapest_usd       numeric(12,2),
+    us_usd             numeric(12,2),
+    savings_pct        int,
+    on_sale            boolean,
+    sale_ends          timestamptz,
+    n_markets          int,
+    updated_at         timestamptz default now()
+);
+create index if not exists idx_deals_savings  on deals (savings_pct desc);
+create index if not exists idx_deals_cheapest on deals (cheapest_usd);
