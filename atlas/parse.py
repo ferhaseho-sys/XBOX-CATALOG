@@ -62,6 +62,23 @@ def _purchasable_prices(product: dict) -> list[dict]:
     return out
 
 
+def is_demo(product: dict) -> bool:
+    """True si el producto es un demo/trial (no un juego gratis real)."""
+    if (product.get("Properties", {}) or {}).get("IsDemo"):
+        return True
+    title = ((product.get("LocalizedProperties") or [{}])[0].get("ProductTitle") or "").lower()
+    return "demo" in title or "trial edition" in title or "trial version" in title
+
+
+def category(product: dict) -> str:
+    """Categoría legible a partir de ProductType."""
+    t = (product.get("ProductType") or "").upper()
+    return {
+        "GAME": "Juego", "DURABLE": "DLC", "CONSUMABLE": "Moneda",
+        "UNMANAGEDCONSUMABLE": "Moneda", "PASS": "Suscripción", "CSV": "Gift card",
+    }.get(t, product.get("ProductType") or "Otro")
+
+
 def parse_price(product: dict, market: str) -> dict:
     pid = product.get("ProductId")
     offers = _purchasable_prices(product)
@@ -72,7 +89,10 @@ def parse_price(product: dict, market: str) -> dict:
                 "is_free": False, "n_offers": 0, "n_paid_offers": 0}
 
     paid = [o for o in offers if (o["list_price"] or 0.0) > 0.0]
-    is_free = len(paid) == 0
+    # "Free" SOLO para juegos F2P reales: Game, no demo, y todo comprable a 0.
+    # (demos y DLC/consumibles a $0 tienen precio 0 pero NO son juegos gratis)
+    is_free = (len(paid) == 0 and (product.get("ProductType") == "Game")
+               and not is_demo(product))
 
     pool = paid if paid else offers
     best = min(pool, key=lambda o: (o["list_price"] if o["list_price"] is not None else 1e18))
