@@ -31,16 +31,17 @@ def q(sql: str, args: tuple = ()) -> list[dict]:
         p.putconn(conn)
 
 
-def all_games(limit: int = 2000, offset: int = 0) -> list[dict]:
-    """Catálogo paginado (con precio US si existe), ordenado por popularidad."""
+def all_games(limit: int = 1000, after: str = "") -> list[dict]:
+    """Catálogo con paginación KEYSET por product_id (índice PK = IO mínimo,
+    sin sort de toda la tabla). `after` = último product_id de la tanda previa."""
     return q(
         "select p.product_id, p.title, p.image_boxart, p.publisher, p.developer, "
         "p.product_type, p.avg_rating, p.n_available_markets, "
-        "pr.currency, pr.list_price, pr.price_usd, pr.discount_pct "
+        "pr.currency, pr.list_price, pr.msrp, pr.price_usd, pr.discount_pct, pr.on_sale "
         "from products p "
         "left join prices pr on pr.product_id = p.product_id and pr.market = 'US' "
-        "order by p.rating_count desc nulls last limit %s offset %s",
-        (limit, offset),
+        "where p.product_id > %s order by p.product_id limit %s",
+        (after, limit),
     )
 
 

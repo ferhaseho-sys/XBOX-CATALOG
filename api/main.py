@@ -134,9 +134,9 @@ def api_product(product_id: str, market: str | None = None):
 
 
 @app.get("/api/games")
-def api_games(limit: int = 2000, offset: int = 0):
-    """Catálogo paginado (carga progresiva desde el cliente)."""
-    return Q.all_games(min(limit, 5000), max(offset, 0))
+def api_games(limit: int = 1000, after: str = ""):
+    """Catálogo con paginación keyset (IO liviano para free-tier)."""
+    return Q.all_games(min(limit, 2000), after)
 
 
 # cliente HTTP compartido para las consultas en vivo (se crea una sola vez)
