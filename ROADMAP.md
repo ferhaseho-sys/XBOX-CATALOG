@@ -125,11 +125,18 @@ en la DB viva — ver commit "elimina deriva de esquema".)_
    **Pendiente:** `GAME PASS` (NO está en displaycatalog — necesita otra fuente, se cruza con
    el #4 de discovery de suscripciones) y `Preorder` (~0 en el dump y se pone viejo rápido;
    detectable por Action `Preorder` cuando aparezca).
-2. **Incluir/Excluir países** en la comparación (que "región más barata" respete la selección
-   del usuario). xbox-now lo hace con dos tablas +/−. El `deals` habría que recalcularlo por
-   subconjunto, o filtrar client-side sobre `/api/live/product`.
-3. **Presets de 1 clic**: AAA / Free / Game Pass / Ofertas / Play Anywhere (mapean a
-   `product_type`, `is_free`, `discount_pct`, badges).
+2. **Incluir/Excluir países** — ✅ HECHO (jul-2026). `queries.catalog()` recalcula la región
+   más barata sobre el subconjunto (CTE `distinct on` sobre `prices`). En free-tier es PESADO
+   (~5-10s), así que va **protegido**: `q_guarded()` con `SET LOCAL statement_timeout` +
+   watchdog `conn.cancel()` (el pooler ignora el timeout de arranque), índice
+   `idx_prices_pid_usd`, y `total` cacheado 10 min. Excluir muchos países puede dar `TooHeavy`
+   (503) → la UI sugiere incluir pocos. UI: chips Incluir/Excluir en el panel de filtros.
+3. **Presets de 1 clic** — ✅ HECHO (jul-2026). Con datos: Ofertas, Ofertas sin Gold, Free (F2P
+   real), Play Anywhere, Series X|S, DLC, Solo juegos. Sin datos aún (deshabilitados
+   "próximamente"): AAA, Game Pass, EA, Preview, Pre-Order, Metascore.
+
+_(Rediseño estilo xbox-now hecho: sidebar por grupos, barra de filtros, panel avanzado,
+What's Trending, paginación numerada — ver commit "Rediseño estilo xbox-now".)_
 4. **Discovery completo de suscripciones** (Fortnite Crew, etc.): NO están en sitemaps; se
    descubren por los add-ons/related de cada juego. Hoy hay `config.KNOWN_SUBSCRIPTIONS`.
 
