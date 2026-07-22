@@ -117,9 +117,14 @@ en la DB viva — ver commit "elimina deriva de esquema".)_
 ## 7. Roadmap (pendiente, priorizado)
 
 **Alto valor:**
-1. **Badges reales** en las tarjetas: `+PC`, `GAME PASS`, `Play Anywhere`, `Preorder`.
-   Falta sumar esos flags al ingest (de `Properties`: `XboxLiveTier`, `IsXboxPlayAnywhere`,
-   `IsPreOrder`, y un check de Game Pass). Hoy `GameCards` solo usa `console_gen`/tipo/add-ons.
+1. **Badges reales** — ✅ PARCIAL (jul-2026): **Play Anywhere** y **PC** hechos. Se detectan
+   de `AllowedPlatforms` de los SKU comprables (`Windows.Desktop`=PC, `Windows.Xbox`=consola;
+   Play Anywhere=ambos). OJO: `XboxXPA` viene **null** en el JSON, no sirve como flag; las
+   plataformas son la señal fiable. Columnas `products.on_pc`/`on_xbox` (las popula
+   `parse_product`), expuestas por la API, badges en `GameCards`.
+   **Pendiente:** `GAME PASS` (NO está en displaycatalog — necesita otra fuente, se cruza con
+   el #4 de discovery de suscripciones) y `Preorder` (~0 en el dump y se pone viejo rápido;
+   detectable por Action `Preorder` cuando aparezca).
 2. **Incluir/Excluir países** en la comparación (que "región más barata" respete la selección
    del usuario). xbox-now lo hace con dos tablas +/−. El `deals` habría que recalcularlo por
    subconjunto, o filtrar client-side sobre `/api/live/product`.
