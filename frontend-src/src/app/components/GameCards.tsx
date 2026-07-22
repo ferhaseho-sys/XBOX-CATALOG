@@ -68,7 +68,7 @@ export function GameCards() {
       // buscar trae metadata + us price; lo adaptamos al shape de catálogo
       setGames((found as any[]).map((g) => ({
         product_id: g.product_id, title: g.title, image_boxart: g.image_boxart,
-        publisher: g.publisher, product_type: g.product_type,
+        publisher: g.publisher, product_type: g.product_type, kind: g.kind, is_demo: g.is_demo,
         us_currency: g.currency, us_list: g.list_price, us_usd: g.price_usd,
         us_disc: g.discount_pct, cheapest: null, release_date: null, short_desc: null,
         console_gen: [], has_addons: false,
@@ -81,7 +81,9 @@ export function GameCards() {
     const out: string[] = [];
     const cg = g.console_gen || [];
     if (Array.isArray(cg) && cg.includes('ConsoleGen9')) out.push('Series X|S');
-    if (g.product_type && g.product_type !== 'Game') out.push(g.product_type);
+    // categoría legible (Juego/DLC/Moneda/Suscripción/Gift card); no repetir "Juego"
+    const kind = g.kind || (g.product_type && g.product_type !== 'Game' ? g.product_type : '');
+    if (kind && kind !== 'Juego') out.push(kind);
     if (g.has_addons) out.push('+ Add-ons');
     return out;
   };
@@ -172,6 +174,9 @@ export function GameCards() {
                     >
                       {g.title}
                     </a>
+                    {g.is_demo && (
+                      <Badge variant="destructive" className="text-[0.65rem]">Demo</Badge>
+                    )}
                     {badgesOf(g).map((b) => (
                       <Badge key={b} variant="secondary" className="text-[0.65rem]">{b}</Badge>
                     ))}

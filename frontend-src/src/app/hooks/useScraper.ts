@@ -113,7 +113,8 @@ export function useScraper() {
       imageUrl: p.image_boxart, lowestPriceUsd: p.price_usd ?? 0, originalPriceUsd: p.price_usd ?? 0,
       price: p.price_usd ?? 0, originalPrice: p.price_usd ?? 0, discount: p.discount_pct || 0,
       currency: p.currency, publisher: p.publisher || '', developer: p.developer || '',
-      rating: p.avg_rating || undefined, category: p.product_type || '',
+      rating: p.avg_rating || undefined, category: p.kind || p.product_type || '',
+      isFree: !!p.is_free,   // F2P real (no un $0 de DLC/demo/delisted)
       platforms: ['Xbox'], categories: [], lastUpdated: new Date().toISOString(),
     });
     // Carga progresiva: primera tanda al instante, el resto crece en background

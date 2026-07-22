@@ -202,7 +202,7 @@ export default function App() {
 
       const matchesPrice = game.lowestPriceUsd <= filters.maxPrice;
 
-      const matchesFree = !filters.freeOnly || game.lowestPriceUsd === 0;
+      const matchesFree = !filters.freeOnly || game.isFree === true;
 
       const matchesRegion = filters.selectedRegions.length === 0 || 
         filters.selectedRegions.includes(game.region);
@@ -344,7 +344,7 @@ export default function App() {
 
   // Check for special offers
   const specialOffers = useMemo(() => {
-    const freeGames = games.filter(g => g.lowestPriceUsd === 0);
+    const freeGames = games.filter(g => g.isFree);
     const bigDiscounts = games.filter(g => g.discount > 80);
     const newDeals = games.filter(g => g.dealUntil && new Date(g.dealUntil) > new Date());
     

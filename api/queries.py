@@ -36,8 +36,8 @@ def all_games(limit: int = 1000, after: str = "") -> list[dict]:
     sin sort de toda la tabla). `after` = último product_id de la tanda previa."""
     return q(
         "select p.product_id, p.title, p.image_boxart, p.publisher, p.developer, "
-        "p.product_type, p.avg_rating, p.n_available_markets, "
-        "pr.currency, pr.list_price, pr.msrp, pr.price_usd, pr.discount_pct, pr.on_sale "
+        "p.product_type, p.kind, p.is_demo, p.avg_rating, p.n_available_markets, "
+        "pr.currency, pr.list_price, pr.msrp, pr.price_usd, pr.discount_pct, pr.on_sale, pr.is_free "
         "from products p "
         "left join prices pr on pr.product_id = p.product_id and pr.market = 'US' "
         "where p.product_id > %s order by p.product_id limit %s",
@@ -85,7 +85,7 @@ def catalog_deals(sort: str = "savings", limit: int = 24, offset: int = 0,
     }.get(sort, "d.savings_pct desc, d.product_id")
     rows = q(
         "select p.product_id, p.title, p.image_boxart, p.publisher, p.product_type, "
-        "p.console_gen, p.has_addons, p.release_date, p.short_desc, "
+        "p.kind, p.is_demo, p.console_gen, p.has_addons, p.release_date, p.short_desc, "
         "d.us_usd, d.cheapest_market, d.cheapest_currency, d.cheapest_list, "
         "d.cheapest_usd, d.savings_pct, d.on_sale, d.sale_ends "
         "from deals d join products p using (product_id) "
@@ -121,7 +121,7 @@ def stats() -> dict:
 
 def search(term: str, limit: int = 40) -> list[dict]:
     return q(
-        "select product_id, title, publisher, product_type, image_boxart, "
+        "select product_id, title, publisher, product_type, kind, is_demo, image_boxart, "
         "avg_rating, rating_count, n_available_markets "
         "from products where title ilike %s order by rating_count desc nulls last limit %s",
         (f"%{term}%", limit),
