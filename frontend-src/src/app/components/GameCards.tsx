@@ -194,7 +194,7 @@ export function GameCards({ initialPreset = '', title }: { initialPreset?: strin
             <div className="flex items-center gap-2 font-semibold"><SlidersHorizontal className="h-4 w-4" /> Filtros avanzados</div>
             <Button variant="ghost" size="icon" onClick={() => setShowFilters(false)}><X className="h-4 w-4" /></Button>
           </div>
-          <div className="grid md:grid-cols-3 gap-4">
+          <div className="grid md:grid-cols-2 gap-4">
             {/* Preset filter */}
             <div>
               <label className="text-sm font-medium">Preset</label>
@@ -206,31 +206,11 @@ export function GameCards({ initialPreset = '', title }: { initialPreset?: strin
                 Los ítems “(próximamente)” aún no tienen datos (Game Pass, Metascore, EA, AAA).
               </p>
             </div>
-            {/* Included countries */}
-            <CountryPanel title="Incluir países" tone="in" list={include}
-              onRemove={(c) => removeCountry('in', c)} />
-            {/* Excluded countries */}
-            <CountryPanel title="Excluir países" tone="ex" list={exclude}
-              onRemove={(c) => removeCountry('ex', c)} disabled={include.length > 0} />
-          </div>
-          {/* selector para agregar país */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-muted-foreground">Agregar país:</span>
-            <select id="country-picker" className="border border-border rounded-md bg-background px-2 py-1.5 text-sm min-w-[200px]" defaultValue="">
-              <option value="" disabled>Elegí un país…</option>
-              {availableCountries.map((c) => <option key={c.code} value={c.code}>{flag(c.code)} {c.name} ({c.code})</option>)}
-            </select>
-            <Button size="sm" variant="outline" onClick={() => {
-              const el = document.getElementById('country-picker') as HTMLSelectElement;
-              if (el?.value) { addCountry('in', el.value); el.value = ''; }
-            }}><Plus className="h-3 w-3 mr-1" /> Incluir</Button>
-            <Button size="sm" variant="outline" disabled={include.length > 0} onClick={() => {
-              const el = document.getElementById('country-picker') as HTMLSelectElement;
-              if (el?.value) { addCountry('ex', el.value); el.value = ''; }
-            }}><Minus className="h-3 w-3 mr-1" /> Excluir</Button>
-            {activeCountryFilter && (
-              <Button size="sm" variant="ghost" onClick={() => { setInclude([]); setExclude([]); }}>Limpiar países</Button>
-            )}
+            {/* Países: buscar + click para agregar */}
+            <CountryFilter
+              available={availableCountries} include={include} exclude={exclude}
+              onAdd={addCountry} onRemove={removeCountry}
+              onClear={() => { setInclude([]); setExclude([]); }} />
           </div>
           {activeCountryFilter && (
             <p className="text-xs text-amber-600 dark:text-amber-500">
@@ -343,23 +323,60 @@ export function GameCards({ initialPreset = '', title }: { initialPreset?: strin
   );
 }
 
-// Panel de país (chips removibles), estilo xbox-now (Included/Excluded)
-function CountryPanel({ title, tone, list, onRemove, disabled }: any) {
+// Filtro de países: toggle Incluir/Excluir + buscador + lista clickeable + chips.
+function CountryFilter({ available, include, exclude, onAdd, onRemove, onClear }: any) {
+  const [mode, setMode] = useState<'in' | 'ex'>('in');
+  const [search, setSearch] = useState('');
+  const active = include.length > 0 || exclude.length > 0;
+  const effMode = include.length > 0 ? 'in' : mode; // si ya hay incluidos, excluir se desactiva
+  const q = search.trim().toLowerCase();
+  const list = available.filter((c: any) => !q || c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q)).slice(0, 60);
+
   return (
-    <div className={`rounded-md border p-3 ${tone === 'in' ? 'border-green-600/40' : 'border-red-600/40'} ${disabled ? 'opacity-50' : ''}`}>
-      <div className="font-medium text-sm mb-2">{title}</div>
-      {list.length === 0 ? (
-        <div className="text-xs text-muted-foreground">{disabled ? 'Desactivado mientras haya países incluidos' : 'Ninguno'}</div>
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {list.map((c: string) => (
-            <span key={c} className="inline-flex items-center gap-1 text-xs bg-muted rounded-full px-2 py-0.5">
-              {flag(c)} {c}
-              <button onClick={() => onRemove(c)} className="hover:text-destructive"><X className="h-3 w-3" /></button>
+    <div>
+      <div className="flex items-center justify-between">
+        <label className="text-sm font-medium">Países</label>
+        {active && <button onClick={onClear} className="text-xs text-muted-foreground hover:text-foreground">Limpiar</button>}
+      </div>
+      {/* chips seleccionados */}
+      {(include.length > 0 || exclude.length > 0) && (
+        <div className="flex flex-wrap gap-1.5 mt-1.5">
+          {include.map((c: string) => (
+            <span key={c} className="inline-flex items-center gap-1 text-xs bg-green-600/15 text-green-700 dark:text-green-400 rounded-full px-2 py-0.5">
+              + {flag(c)} {c}<button onClick={() => onRemove('in', c)}><X className="h-3 w-3" /></button>
+            </span>
+          ))}
+          {exclude.map((c: string) => (
+            <span key={c} className="inline-flex items-center gap-1 text-xs bg-red-600/15 text-red-700 dark:text-red-400 rounded-full px-2 py-0.5">
+              − {flag(c)} {c}<button onClick={() => onRemove('ex', c)}><X className="h-3 w-3" /></button>
             </span>
           ))}
         </div>
       )}
+      {/* toggle modo */}
+      <div className="flex gap-1 mt-2">
+        <button onClick={() => setMode('in')}
+          className={`flex-1 text-xs rounded-md border py-1 ${effMode === 'in' ? 'bg-green-600/15 border-green-600/40 text-green-700 dark:text-green-400 font-medium' : 'border-border'}`}>
+          <Plus className="h-3 w-3 inline mr-1" />Incluir
+        </button>
+        <button onClick={() => setMode('ex')} disabled={include.length > 0}
+          className={`flex-1 text-xs rounded-md border py-1 disabled:opacity-40 ${effMode === 'ex' ? 'bg-red-600/15 border-red-600/40 text-red-700 dark:text-red-400 font-medium' : 'border-border'}`}>
+          <Minus className="h-3 w-3 inline mr-1" />Excluir
+        </button>
+      </div>
+      {/* buscador + lista */}
+      <Input className="mt-2 h-8 text-sm" placeholder="Buscar país…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className="mt-1.5 max-h-40 overflow-y-auto rounded-md border divide-y">
+        {list.length === 0 ? (
+          <div className="text-xs text-muted-foreground p-2">Sin países.</div>
+        ) : list.map((c: any) => (
+          <button key={c.code} onClick={() => onAdd(effMode, c.code)}
+            className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-left hover:bg-muted">
+            <span>{flag(c.code)}</span><span className="truncate">{c.name}</span>
+            <span className="ml-auto text-xs text-muted-foreground">{c.code}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

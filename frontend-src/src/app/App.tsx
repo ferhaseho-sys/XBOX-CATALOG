@@ -76,7 +76,7 @@ export default function App() {
               <div>
                 <h1 className="text-lg font-bold">Cheap Xbox Games — Worldwide Price Comparison</h1>
                 <p className="text-xs text-muted-foreground">
-                  Datos oficiales de Microsoft Store · {games.length ? `${games.length} en memoria` : 'catálogo global'}
+                  Datos oficiales de Microsoft Store · comparación mundial de precios
                 </p>
               </div>
               <div className="flex items-center gap-2">

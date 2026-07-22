@@ -17,7 +17,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: 'Catálogo',
     items: [
-      { key: 'cat', label: 'Game Comparison', icon: Gamepad2, kind: 'catalog', preset: '' },
+      { key: 'cat', label: 'Game Comparison', icon: Gamepad2, kind: 'catalog', preset: 'games' },
       { key: 'cat-dlc', label: 'DLC Comparison', icon: Package, kind: 'catalog', preset: 'dlc' },
       { key: 'cat-deals', label: 'Deals & Discounts', icon: Tag, kind: 'catalog', preset: 'discounts' },
       { key: 'cat-free', label: 'Free Games', icon: Star, kind: 'catalog', preset: 'free' },

@@ -285,9 +285,24 @@ def trending(limit: int = 12) -> list[dict]:
     )
 
 
+# Microsoft aún factura algunos mercados con el código de moneda VIEJO (pre-redenominación),
+# pero las APIs de FX usan el código nuevo. Sin esto, esas monedas quedan sin rate y el precio
+# se toma como $0 (falso "más barato", ej. Mauritania MRO). factor = cuántas unidades VIEJAS
+# equivalen a 1 NUEVA => rate(viejo) = rate(nuevo) / factor.
+_CURRENCY_ALIASES = {
+    "MRO": ("MRU", 10),      # Uguiya (Mauritania), redenominado 2018 (10:1)
+    "STD": ("STN", 1000),    # Dobra (Santo Tomé), redenominado 2018 (1000:1)
+}
+
+
 def fx_rates_map() -> dict:
-    """{CURRENCY: usd_rate} desde fx_rates, para convertir precios en vivo."""
-    return {r["currency"]: float(r["usd_rate"]) for r in q("select currency, usd_rate from fx_rates")}
+    """{CURRENCY: usd_rate} desde fx_rates (+ alias de monedas legacy), para convertir
+    precios en vivo. Incluye los códigos viejos que Microsoft todavía usa."""
+    m = {r["currency"]: float(r["usd_rate"]) for r in q("select currency, usd_rate from fx_rates")}
+    for legacy, (modern, factor) in _CURRENCY_ALIASES.items():
+        if legacy not in m and modern in m:
+            m[legacy] = m[modern] / factor
+    return m
 
 
 def stats() -> dict:
