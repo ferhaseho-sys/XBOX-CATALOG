@@ -8,12 +8,14 @@ create table if not exists products (
     short_title          text,
     short_desc           text,
     description          text,
-    product_type         text,          -- Game / Durable / Consumable / CSV
+    product_type         text,          -- Game / Durable / Consumable / CSV / PASS
     product_kind         text,
     product_family       text,
     developer            text,
     publisher            text,
-    category             text,
+    category             text,           -- Properties.Category cruda de Microsoft
+    kind                 text,           -- categoría legible: Juego/DLC/Moneda/Suscripción/Gift card
+    is_demo              boolean,        -- true si es demo/trial (no un juego gratis real)
     categories           text[],
     release_date         date,
     min_user_age         int,

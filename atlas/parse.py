@@ -195,6 +195,8 @@ def parse_product(product: dict, market: str = "US") -> dict:
         "developer": lp.get("DeveloperName"),
         "publisher": lp.get("PublisherName"),
         "category": props.get("Category"),
+        "kind": category(product),          # legible: Juego/DLC/Moneda/Suscripción/Gift card
+        "is_demo": is_demo(product),        # demo/trial (no F2P real)
         "categories": props.get("Categories") or [],
         "release_date": (mp.get("OriginalReleaseDate") or "")[:10] or None,
         "min_user_age": mp.get("MinimumUserAge"),
