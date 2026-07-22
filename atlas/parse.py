@@ -70,6 +70,26 @@ def is_demo(product: dict) -> bool:
     return "demo" in title or "trial edition" in title or "trial version" in title
 
 
+def platforms(product: dict) -> tuple[bool, bool]:
+    """(on_pc, on_xbox) según AllowedPlatforms de las availabilities comprables.
+    Windows.Desktop = PC, Windows.Xbox = consola. Play Anywhere = ambos.
+    (XboxXPA viene null en el JSON, así que las plataformas son la señal fiable.)"""
+    pc = xb = False
+    for dsa in product.get("DisplaySkuAvailabilities", []) or []:
+        for av in dsa.get("Availabilities", []) or []:
+            if not ({"Purchase", "Preorder"} & set(av.get("Actions") or [])):
+                continue
+            aps = (((av.get("Conditions") or {}).get("ClientConditions") or {})
+                   .get("AllowedPlatforms") or [])
+            for ap in aps:
+                n = ap.get("PlatformName")
+                if n == "Windows.Desktop":
+                    pc = True
+                elif n == "Windows.Xbox":
+                    xb = True
+    return pc, xb
+
+
 def category(product: dict) -> str:
     """Categoría legible a partir de ProductType."""
     t = (product.get("ProductType") or "").upper()
@@ -160,6 +180,7 @@ def parse_product(product: dict, market: str = "US") -> dict:
     props = product.get("Properties", {}) or {}
     lp = (product.get("LocalizedProperties") or [{}])[0]
     mp = (product.get("MarketProperties") or [{}])[0]
+    _plats = platforms(product)   # (on_pc, on_xbox)
 
     imgs = {}
     for im in lp.get("Images", []) or []:
@@ -197,6 +218,8 @@ def parse_product(product: dict, market: str = "US") -> dict:
         "category": props.get("Category"),
         "kind": category(product),          # legible: Juego/DLC/Moneda/Suscripción/Gift card
         "is_demo": is_demo(product),        # demo/trial (no F2P real)
+        "on_pc": _plats[0],                 # Windows.Desktop -> corre en PC
+        "on_xbox": _plats[1],               # Windows.Xbox -> corre en consola
         "categories": props.get("Categories") or [],
         "release_date": (mp.get("OriginalReleaseDate") or "")[:10] or None,
         "min_user_age": mp.get("MinimumUserAge"),

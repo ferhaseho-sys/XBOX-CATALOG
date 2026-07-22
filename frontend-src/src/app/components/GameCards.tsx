@@ -69,6 +69,7 @@ export function GameCards() {
       setGames((found as any[]).map((g) => ({
         product_id: g.product_id, title: g.title, image_boxart: g.image_boxart,
         publisher: g.publisher, product_type: g.product_type, kind: g.kind, is_demo: g.is_demo,
+        on_pc: g.on_pc, on_xbox: g.on_xbox,
         us_currency: g.currency, us_list: g.list_price, us_usd: g.price_usd,
         us_disc: g.discount_pct, cheapest: null, release_date: null, short_desc: null,
         console_gen: [], has_addons: false,
@@ -81,6 +82,9 @@ export function GameCards() {
     const out: string[] = [];
     const cg = g.console_gen || [];
     if (Array.isArray(cg) && cg.includes('ConsoleGen9')) out.push('Series X|S');
+    // plataformas: Play Anywhere (Xbox+PC) o solo PC (la consola es el default)
+    if (g.on_pc && g.on_xbox) out.push('Play Anywhere');
+    else if (g.on_pc) out.push('PC');
     // categoría legible (Juego/DLC/Moneda/Suscripción/Gift card); no repetir "Juego"
     const kind = g.kind || (g.product_type && g.product_type !== 'Game' ? g.product_type : '');
     if (kind && kind !== 'Juego') out.push(kind);

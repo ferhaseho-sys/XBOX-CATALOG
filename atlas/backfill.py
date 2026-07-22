@@ -16,7 +16,7 @@ import sys
 import collections
 from psycopg2.extras import execute_values
 from . import db
-from .parse import is_demo, category
+from .parse import is_demo, category, platforms
 
 try:
     import orjson
@@ -29,7 +29,7 @@ BATCH = 2000
 
 
 def rows_from_dump(path: str):
-    """Genera (product_id, kind, is_demo) por cada línea del dump."""
+    """Genera (product_id, kind, is_demo, on_pc, on_xbox) por cada línea del dump."""
     with open(path, "rb") as f:
         for line in f:
             if not line.strip():
@@ -38,16 +38,18 @@ def rows_from_dump(path: str):
             pid = p.get("ProductId")
             if not pid:
                 continue
-            yield (pid, category(p), is_demo(p))
+            pc, xb = platforms(p)
+            yield (pid, category(p), is_demo(p), pc, xb)
 
 
 def backfill_products(conn, path: str) -> collections.Counter:
     kinds = collections.Counter()
-    n_demo = 0
+    n_demo = n_pc = n_xbox = n_xpa = 0
     total = 0
     batch = []
-    sql = ("update products as p set kind = v.kind, is_demo = v.is_demo "
-           "from (values %s) as v(product_id, kind, is_demo) "
+    sql = ("update products as p set kind = v.kind, is_demo = v.is_demo, "
+           "on_pc = v.on_pc, on_xbox = v.on_xbox "
+           "from (values %s) as v(product_id, kind, is_demo, on_pc, on_xbox) "
            "where p.product_id = v.product_id")
 
     def flush():
@@ -55,21 +57,27 @@ def backfill_products(conn, path: str) -> collections.Counter:
         if not batch:
             return
         with conn.cursor() as cur:
-            execute_values(cur, sql, batch, template="(%s, %s, %s::boolean)", page_size=BATCH)
+            execute_values(cur, sql, batch,
+                           template="(%s, %s, %s::boolean, %s::boolean, %s::boolean)",
+                           page_size=BATCH)
         conn.commit()
         batch = []
 
-    for pid, kind, demo in rows_from_dump(path):
+    for pid, kind, demo, pc, xb in rows_from_dump(path):
         kinds[kind] += 1
         n_demo += 1 if demo else 0
+        n_pc += 1 if pc else 0
+        n_xbox += 1 if xb else 0
+        n_xpa += 1 if (pc and xb) else 0
         total += 1
-        batch.append((pid, kind, demo))
+        batch.append((pid, kind, demo, pc, xb))
         if len(batch) >= BATCH:
             flush()
             print(f"[backfill] {total} products actualizados…", flush=True)
     flush()
     print(f"[backfill] LISTO products: {total} | demos: {n_demo}", flush=True)
     print(f"[backfill] distribución kind: {dict(kinds.most_common())}", flush=True)
+    print(f"[backfill] plataformas: PC={n_pc} Xbox={n_xbox} PlayAnywhere={n_xpa}", flush=True)
     return kinds
 
 

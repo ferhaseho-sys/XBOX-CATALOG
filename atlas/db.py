@@ -8,7 +8,8 @@ from . import config
 PRODUCT_COLS = [
     "product_id", "title", "short_title", "short_desc", "description",
     "product_type", "product_kind", "product_family", "developer", "publisher",
-    "category", "kind", "is_demo", "categories", "release_date", "min_user_age",
+    "category", "kind", "is_demo", "on_pc", "on_xbox", "categories",
+    "release_date", "min_user_age",
     "is_ms_product", "has_addons", "console_gen", "gold_required", "image_hero",
     "image_boxart", "image_poster", "trailer", "avg_rating", "rating_count",
     "ratings", "xbox_title_id", "available_markets", "n_available_markets",

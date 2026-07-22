@@ -16,6 +16,8 @@ create table if not exists products (
     category             text,           -- Properties.Category cruda de Microsoft
     kind                 text,           -- categoría legible: Juego/DLC/Moneda/Suscripción/Gift card
     is_demo              boolean,        -- true si es demo/trial (no un juego gratis real)
+    on_pc                boolean,        -- AllowedPlatforms ∋ Windows.Desktop (corre en PC)
+    on_xbox              boolean,        -- AllowedPlatforms ∋ Windows.Xbox (corre en consola)
     categories           text[],
     release_date         date,
     min_user_age         int,
