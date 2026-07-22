@@ -101,13 +101,18 @@ marcaba `is_free` para cualquier `$0`. De 2.449 así: 538 demos + 1.199 DLC/cons
 `parse.category()` (Juego/DLC/Moneda/Suscripción/Gift card). **3.303 delisted** (sin `Purchase`)
 ya se excluyen bien.
 
-**TAREA PENDIENTE (P0): aplicar el fix a los datos vivos** (el `parse.py` ya está bien, pero
-la DB tiene datos viejos):
-1. Schema: columnas `is_demo` bool + `category` text en `products`.
-2. Poblar desde el dump (bulk-update offline, NO re-ingestar → ahorra IO): leer `dump_us.ndjson`,
-   calcular is_demo/category por producto, `UPDATE products`. Y `UPDATE prices SET is_free=false
-   WHERE product_id IN (productos no-Game o demo)`.
-3. Frontend (`GameCards`): mostrar categoría + badge Demo; "Free" solo si `is_free` real.
+**✅ P0 HECHO (jul-2026):** aplicado a los datos vivos y al ingest futuro.
+1. Schema: `products.kind` (legible: Juego/DLC/Moneda/Suscripción/Gift card) + `is_demo`
+   bool. OJO: se usó `kind` (no `category`) porque `category` ya guarda el `Properties.Category`
+   crudo de MS. `parse_product` ahora setea kind/is_demo, así que el ingest los mantiene.
+2. Backfill offline con `atlas/backfill.py` (lee `dump_us.ndjson`, NO re-ingesta): 43.081
+   categorizados (DLC 21.830 · Juego 18.921 · Moneda 2.313 · Suscripción 16), 664 demos,
+   y 38.901 filas `is_free` corregidas a false. Quedan 722 juegos F2P reales.
+3. Frontend (`GameCards`): badge de categoría legible + badge Demo; "Free" (header/filtro)
+   usa `is_free` real. La API expone kind/is_demo/is_free.
+
+_(También se versionó la tabla `variants` y `deals` en `schema.sql`, que antes solo existían
+en la DB viva — ver commit "elimina deriva de esquema".)_
 
 ## 7. Roadmap (pendiente, priorizado)
 
