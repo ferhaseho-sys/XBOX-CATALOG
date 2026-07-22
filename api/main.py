@@ -82,7 +82,103 @@ def api_stats():
 
 @app.get("/api/search")
 def api_search(term: str = Query(..., min_length=1), limit: int = 40):
-    return Q.search(term, min(limit, 100))
+    # forma de catálogo (con región más barata) para que muestre precios
+    return Q.search_catalog(term, min(limit, 60))
+
+
+# ---- Búsqueda tipo Microsoft (autosuggest) + secciones ricas de la ficha ----
+_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+       "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+
+
+@app.get("/api/suggest")
+def api_suggest(q: str = "", market: str = "en-us"):
+    """Proxy del autosuggest de Microsoft Store (evita CORS). Sugerencias con
+    imagen + product_id mientras el usuario tipea, como en xbox.com."""
+    import requests
+    q = (q or "").strip()
+    if len(q) < 2:
+        return []
+    try:
+        r = requests.get(
+            "https://www.microsoft.com/msstoreapiprod/api/autosuggest",
+            params={"market": market, "clientId": "7F27B536-CF6B-4C65-8638-A0F8CBDFCA65",
+                    "sources": "xSearch-Products", "counts": "10", "query": q},
+            headers={"User-Agent": _UA, "Accept": "application/json"}, timeout=8)
+        data = r.json()
+    except Exception:
+        return []
+    out = []
+    for rs in data.get("ResultSets") or []:
+        for s in rs.get("Suggests") or []:
+            metas = {m.get("Key"): m.get("Value") for m in (s.get("Metas") or [])}
+            img = s.get("ImageUrl") or metas.get("Icon") or ""
+            if img.startswith("//"):
+                img = "https:" + img
+            out.append({"product_id": metas.get("BigCatalogId"), "title": s.get("Title"),
+                        "image": img, "type": metas.get("ProductType"),
+                        "publisher": metas.get("PublisherName")})
+    return [o for o in out if o.get("product_id")]
+
+
+@app.get("/api/product/{product_id}/media")
+def api_product_media(product_id: str):
+    """Medios ricos (screenshots, tráiler, descripción, capacidades) en vivo de MS."""
+    from atlas.parse import parse_media
+    prods = _get_live_client().batch([product_id], market="US", locale="en-US")
+    if not prods:
+        raise HTTPException(404, "producto no encontrado")
+    return parse_media(prods[0])
+
+
+@app.get("/api/reviews/{product_id}")
+def api_reviews(product_id: str, locale: str = "en-US"):
+    """Reseñas + resumen desde el servicio público de reviews de Xbox."""
+    import requests
+    try:
+        r = requests.get(
+            f"https://emerald.xboxservices.com/xboxcomfd/ratingsandreviews/summaryandreviews/{product_id}",
+            params={"locale": locale, "orderBy": "MostHelpful", "itemCount": 10, "starFilter": "NoFilter"},
+            headers={"User-Agent": _UA, "Accept": "*/*", "Origin": "https://www.xbox.com",
+                     "x-ms-api-version": "1.0"}, timeout=8)
+        if r.status_code != 200:
+            return {"ratingsSummary": None, "reviews": []}
+        return r.json()
+    except Exception:
+        return {"ratingsSummary": None, "reviews": []}
+
+
+@app.get("/api/related/{product_id}")
+def api_related(product_id: str, locale: str = "en-us"):
+    """'A los usuarios también les gusta esto': scrapea el estado embebido de la
+    PDP de xbox.com (__PRELOADED_STATE__), toma los IDs 'MORELIKE' y los devuelve
+    como tarjetas de nuestro catálogo (los que tengamos en la DB)."""
+    import requests, re, json
+    try:
+        r = requests.get(f"https://www.xbox.com/{locale}/games/store/_/{product_id}",
+                         headers={"User-Agent": _UA}, timeout=12)
+        html = r.text
+    except Exception:
+        return []
+    m = re.search(r"window\.__PRELOADED_STATE__\s*=\s*(\{.*?\});\s*window\.env", html, re.S)
+    ids: list[str] = []
+    if m:
+        try:
+            state = json.loads(m.group(1))
+            chans = (((state.get("core2") or {}).get("channels") or {}).get("channelData") or {})
+            for k, v in chans.items():
+                if k.startswith("MORELIKE_"):
+                    for p in ((v.get("data") or {}).get("products") or []):
+                        if p.get("productId"):
+                            ids.append(p["productId"])
+        except Exception:
+            pass
+    # de-dup preservando orden, sin el propio producto
+    seen, ordered = set(), []
+    for i in ids:
+        if i != product_id and i not in seen:
+            seen.add(i); ordered.append(i)
+    return Q.catalog_by_ids(ordered[:12])
 
 
 @app.get("/api/cheapest")

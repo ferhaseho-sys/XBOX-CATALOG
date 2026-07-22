@@ -261,16 +261,55 @@ def catalog(sort: str = "savings", limit: int = 24, offset: int = 0,
                  f"order by {order} limit %s offset %s",
                  tuple(filt_args + [limit, offset]))
 
+    return {"total": total, "items": _shape_catalog_rows(rows)}
+
+
+def _shape_catalog_rows(rows: list[dict]) -> list[dict]:
+    """Da a cada fila la forma que consume la tarjeta del catálogo (us_* + cheapest)."""
     for r in rows:
         r["us_currency"] = "USD"
         r["us_list"] = r.get("us_usd")
         r["us_disc"] = 0
-        r["cheapest"] = {
-            "market": r.pop("cheapest_market"), "currency": r.pop("cheapest_currency"),
-            "list_price": r.pop("cheapest_list"), "price_usd": r.pop("cheapest_usd"),
-            "discount_pct": 0, "on_sale": r.pop("on_sale"), "sale_ends": r.pop("sale_ends"),
-        }
-    return {"total": total, "items": rows}
+        if r.get("cheapest_market"):
+            r["cheapest"] = {
+                "market": r.pop("cheapest_market"), "currency": r.pop("cheapest_currency"),
+                "list_price": r.pop("cheapest_list"), "price_usd": r.pop("cheapest_usd"),
+                "discount_pct": 0, "on_sale": r.pop("on_sale"), "sale_ends": r.pop("sale_ends"),
+            }
+        else:
+            for k in ("cheapest_market", "cheapest_currency", "cheapest_list",
+                      "cheapest_usd", "on_sale", "sale_ends"):
+                r.pop(k, None)
+            r["cheapest"] = None
+    return rows
+
+
+def search_catalog(term: str, limit: int = 40) -> list[dict]:
+    """Búsqueda por título con forma de catálogo (incluye la región más barata desde
+    `deals`), para que los resultados muestren precios como las tarjetas normales."""
+    rows = q(
+        f"select {_CAT_COLS}, {_CAT_EXTRA}, d.us_usd, d.cheapest_market, d.cheapest_currency, "
+        "d.cheapest_list, d.cheapest_usd, d.savings_pct, d.on_sale, d.sale_ends "
+        "from products p left join deals d using (product_id) "
+        "where p.title ilike %s order by p.rating_count desc nulls last, p.title limit %s",
+        (f"%{term}%", min(limit, 60)),
+    )
+    return _shape_catalog_rows(rows)
+
+
+def catalog_by_ids(ids: list[str]) -> list[dict]:
+    """Filas de catálogo para una lista de product_ids (para 'relacionados'),
+    respetando el orden pedido y descartando los que no están en la DB."""
+    if not ids:
+        return []
+    rows = q(
+        f"select {_CAT_COLS}, {_CAT_EXTRA}, d.us_usd, d.cheapest_market, d.cheapest_currency, "
+        "d.cheapest_list, d.cheapest_usd, d.savings_pct, d.on_sale, d.sale_ends "
+        "from products p left join deals d using (product_id) where p.product_id = any(%s)",
+        (ids,),
+    )
+    by_id = {r["product_id"]: r for r in _shape_catalog_rows(rows)}
+    return [by_id[i] for i in ids if i in by_id]
 
 
 def trending(limit: int = 12) -> list[dict]:

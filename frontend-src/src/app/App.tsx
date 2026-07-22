@@ -26,7 +26,13 @@ export default function App() {
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
   const [isElectron, setIsElectron] = useState(false);
   const [appVersion, setAppVersion] = useState('2.0.0');
-  const [productId, setProductId] = useState<string | null>(null); // ficha de detalle abierta
+  // ficha de detalle: se abre en pestaña nueva (/product/{id}); acá detectamos la ruta
+  const initialPid = (() => {
+    const m = window.location.pathname.match(/^\/product\/([0-9A-Za-z]{12})$/);
+    return m ? m[1] : null;
+  })();
+  const [productId, setProductId] = useState<string | null>(initialPid);
+  const openProduct = (id: string) => window.open(`/product/${id}`, '_blank', 'noopener');
 
   const {
     games, selectedGames, regionStats, priceHistory, progress,
@@ -50,8 +56,8 @@ export default function App() {
   const onSelect = (it: NavItem) => { if (it.kind !== 'soon') { setProductId(null); setSel(it); } };
 
   const renderContent = () => {
-    if (productId) return <ProductDetail productId={productId} onBack={() => setProductId(null)} />;
-    if (sel.kind === 'catalog') return <GameCards initialPreset={sel.preset || ''} title={sel.label} onOpen={setProductId} />;
+    if (productId) return <ProductDetail productId={productId} onBack={() => { window.location.href = '/'; }} onOpen={openProduct} />;
+    if (sel.kind === 'catalog') return <GameCards initialPreset={sel.preset || ''} title={sel.label} onOpen={openProduct} />;
     switch (sel.key) {
       case 'regional': return <RegionalPriceExplorer />;
       case 'viewer': return <XboxProductViewer />;

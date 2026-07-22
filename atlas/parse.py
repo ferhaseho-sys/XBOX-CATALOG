@@ -175,6 +175,32 @@ def parse_variants(product: dict, market: str) -> list[dict]:
     return out
 
 
+def parse_media(product: dict) -> dict:
+    """Medios ricos para la ficha: screenshots, tráiler, descripción larga,
+    capacidades (Attributes) y géneros. Se extrae en vivo (no se guarda en DB)."""
+    lp = (product.get("LocalizedProperties") or [{}])[0]
+    props = product.get("Properties", {}) or {}
+    shots = [_fix_uri(im.get("Uri", "")) for im in (lp.get("Images") or [])
+             if (im.get("ImagePurpose") or "") == "Screenshot" and im.get("Uri")]
+    trailer = ""
+    for v in lp.get("CMSVideos", []) or []:
+        if (v.get("VideoPurpose") or "") == "trailer":
+            trailer = v.get("HLS") or v.get("DASH") or ""
+            break
+    attrs = [a.get("Name") for a in (props.get("Attributes") or []) if a.get("Name")]
+    return {
+        "product_id": product.get("ProductId"),
+        "title": lp.get("ProductTitle"),
+        "description": lp.get("ProductDescription") or lp.get("ShortDescription"),
+        "developer": lp.get("DeveloperName"),
+        "publisher": lp.get("PublisherName"),
+        "screenshots": shots[:12],
+        "trailer": trailer,
+        "capabilities": attrs[:24],
+        "categories": props.get("Categories") or [],
+    }
+
+
 def parse_product(product: dict, market: str = "US") -> dict:
     pid = product.get("ProductId")
     props = product.get("Properties", {}) or {}

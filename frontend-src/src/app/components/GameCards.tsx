@@ -58,6 +58,8 @@ export function GameCards({ initialPreset = '', title, onOpen }: { initialPreset
   const [preset, setPreset] = useState(initialPreset);
   const [term, setTerm] = useState('');
   const [searching, setSearching] = useState(false);
+  const [suggests, setSuggests] = useState<any[]>([]);
+  const [showSug, setShowSug] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [rates, setRates] = useState<Record<string, number>>({});
   const [cur, setCur] = useState('USD');
@@ -80,6 +82,20 @@ export function GameCards({ initialPreset = '', title, onOpen }: { initialPreset
 
   const conv = (u: any) => (u == null ? null : cur === 'USD' || !rates[cur] ? Number(u) : Number(u) / rates[cur]);
   const CURRENCIES = ['USD', 'EUR', 'GBP', 'ARS', 'BRL', 'MXN', 'CLP', 'COP', 'PEN', 'TRY', 'RUB', 'UAH', 'INR', 'JPY', 'KRW', 'PLN', 'ZAR', 'NGN'];
+
+  // autosuggest de Microsoft mientras se tipea (debounced)
+  useEffect(() => {
+    const t = term.trim();
+    if (t.length < 2) { setSuggests([]); return; }
+    let cancelled = false;
+    const h = setTimeout(() => {
+      fetch(`${ATLAS_API}/api/suggest?q=${encodeURIComponent(t)}`)
+        .then((r) => (r.ok ? r.json() : []))
+        .then((d) => { if (!cancelled) setSuggests(Array.isArray(d) ? d : []); })
+        .catch(() => {});
+    }, 250);
+    return () => { cancelled = true; clearTimeout(h); };
+  }, [term]);
 
   const pages = Math.max(1, Math.ceil(total / PAGE));
 
@@ -110,18 +126,14 @@ export function GameCards({ initialPreset = '', title, onOpen }: { initialPreset
 
   const doSearch = async () => {
     const t = term.trim();
+    setShowSug(false);
     if (!t) { setSearching(false); setPage(1); load(1); return; }
     setSearching(true); setLoading(true); setTooHeavy(false);
     try {
+      // /api/search ya devuelve la forma de catálogo (con región más barata)
       const found = await fetch(`${ATLAS_API}/api/search?term=${encodeURIComponent(t)}&limit=40`)
         .then((r) => (r.ok ? r.json() : []));
-      setGames((found as any[]).map((g) => ({
-        product_id: g.product_id, title: g.title, image_boxart: g.image_boxart,
-        publisher: g.publisher, product_type: g.product_type, kind: g.kind, is_demo: g.is_demo,
-        on_pc: g.on_pc, on_xbox: g.on_xbox, us_currency: g.currency, us_list: g.list_price,
-        us_usd: g.price_usd, us_disc: g.discount_pct, cheapest: null, release_date: null,
-        short_desc: null, console_gen: [], has_addons: false,
-      })));
+      setGames(Array.isArray(found) ? found : []);
       setTotal(0);
     } catch { setGames([]); }
     setLoading(false);
@@ -169,7 +181,25 @@ export function GameCards({ initialPreset = '', title, onOpen }: { initialPreset
         <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input className="pl-9" placeholder="Buscar juego por título…" value={term}
-            onChange={(e) => setTerm(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && doSearch()} />
+            onChange={(e) => { setTerm(e.target.value); setShowSug(true); }}
+            onFocus={() => setShowSug(true)}
+            onBlur={() => setTimeout(() => setShowSug(false), 150)}
+            onKeyDown={(e) => e.key === 'Enter' && doSearch()} />
+          {showSug && suggests.length > 0 && (
+            <div className="absolute z-30 mt-1 w-full max-h-80 overflow-y-auto rounded-md border bg-popover shadow-lg">
+              {suggests.map((s) => (
+                <button key={s.product_id} onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => { setShowSug(false); onOpen ? onOpen(s.product_id) : window.open(`/product/${s.product_id}`, '_blank'); }}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-muted">
+                  {s.image ? <img src={s.image} alt="" className="w-8 h-8 rounded object-cover bg-muted flex-shrink-0" /> : <div className="w-8 h-8 rounded bg-muted flex-shrink-0" />}
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm truncate">{s.title}</span>
+                    <span className="block text-xs text-muted-foreground truncate">{s.type}{s.publisher ? ` · ${s.publisher}` : ''}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <Button onClick={doSearch} disabled={loading}>
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Go!'}
@@ -301,8 +331,9 @@ export function GameCards({ initialPreset = '', title, onOpen }: { initialPreset
           <h3 className="font-semibold mb-3">What's Trending</h3>
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-9 gap-3">
             {trending.map((t) => (
-              <a key={t.product_id} href={`https://www.xbox.com/games/store/_/${t.product_id}`}
-                target="_blank" rel="noopener noreferrer" className="group text-center">
+              <button key={t.product_id}
+                onClick={() => (onOpen ? onOpen(t.product_id) : window.open(`/product/${t.product_id}`, '_blank'))}
+                className="group text-center">
                 {t.image_boxart ? (
                   <img src={t.image_boxart} alt={t.title} loading="lazy"
                     className="w-full aspect-[3/4] object-cover rounded-md bg-muted group-hover:opacity-90" />
@@ -315,7 +346,7 @@ export function GameCards({ initialPreset = '', title, onOpen }: { initialPreset
                 {t.cheapest_usd != null && (
                   <div className="text-[0.7rem] text-muted-foreground">desde ${Number(t.cheapest_usd).toFixed(2)} {flag(t.cheapest_market)}</div>
                 )}
-              </a>
+              </button>
             ))}
           </div>
         </Card>

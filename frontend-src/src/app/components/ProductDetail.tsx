@@ -16,7 +16,7 @@ const countryName = (c: string) => { try { return _rn?.of(c) || c; } catch { ret
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'ARS', 'BRL', 'MXN', 'CLP', 'COP', 'PEN', 'TRY', 'RUB', 'UAH', 'INR', 'JPY', 'KRW', 'PLN', 'ZAR', 'NGN'];
 const STORE = (id: string) => `https://www.xbox.com/games/store/_/${id}`;
 
-export function ProductDetail({ productId, onBack }: { productId: string; onBack: () => void }) {
+export function ProductDetail({ productId, onBack, onOpen }: { productId: string; onBack: () => void; onOpen?: (id: string) => void }) {
   const [p, setP] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [rates, setRates] = useState<Record<string, number>>({});
@@ -25,12 +25,29 @@ export function ProductDetail({ productId, onBack }: { productId: string; onBack
   const [live, setLive] = useState<any[] | null>(null);
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveErr, setLiveErr] = useState('');
+  const [media, setMedia] = useState<any>(null);
+  const [reviews, setReviews] = useState<any>(null);
+  const [related, setRelated] = useState<any[]>([]);
+  const [shot, setShot] = useState(0); // screenshot activo
+
+  const open = (id: string) => (onOpen ? onOpen(id) : window.open(`/product/${id}`, '_blank'));
 
   useEffect(() => {
-    setLoading(true); setLive(null); setLiveErr('');
-    fetch(`${ATLAS_API}/api/product/${productId}`).then((r) => (r.ok ? r.json() : null))
-      .then((d) => setP(d)).catch(() => setP(null)).finally(() => setLoading(false));
+    setLoading(true); setLive(null); setLiveErr(''); setMedia(null); setReviews(null); setRelated([]); setShot(0);
     window.scrollTo({ top: 0 });
+    // 1) ficha desde la DB; si no está, fallback a la consulta EN VIVO (cualquier producto de MS)
+    fetch(`${ATLAS_API}/api/product/${productId}`).then((r) => (r.ok ? r.json() : null))
+      .then(async (d) => {
+        if (d) { setP(d); return; }
+        const lv = await fetch(`${ATLAS_API}/api/live/product/${productId}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+        setP(lv ? { product_id: productId, title: lv.title, prices: lv.prices || [], variants: lv.variants || [] } : null);
+        if (lv?.prices) setLive(lv.prices);
+      })
+      .catch(() => setP(null)).finally(() => setLoading(false));
+    // 2) medios ricos (screenshots/tráiler/capacidades) + reseñas + relacionados (en vivo/scrape; andan en Railway)
+    fetch(`${ATLAS_API}/api/product/${productId}/media`).then((r) => (r.ok ? r.json() : null)).then(setMedia).catch(() => {});
+    fetch(`${ATLAS_API}/api/reviews/${productId}`).then((r) => (r.ok ? r.json() : null)).then(setReviews).catch(() => {});
+    fetch(`${ATLAS_API}/api/related/${productId}`).then((r) => (r.ok ? r.json() : [])).then((d) => setRelated(Array.isArray(d) ? d : [])).catch(() => {});
   }, [productId]);
 
   useEffect(() => {
@@ -87,8 +104,9 @@ export function ProductDetail({ productId, onBack }: { productId: string; onBack
     </div>
   );
 
-  const desc = p.description || p.short_desc || '';
+  const desc = p.description || p.short_desc || media?.description || '';
   const showDesc = expanded ? desc : desc.slice(0, 600);
+  const shots: string[] = media?.screenshots || [];
 
   return (
     <div className="space-y-5">
@@ -136,6 +154,31 @@ export function ProductDetail({ productId, onBack }: { productId: string; onBack
           {desc.length > 600 && (
             <button className="text-sm text-primary mt-2" onClick={() => setExpanded((v) => !v)}>{expanded ? 'Mostrar menos' : 'Mostrar más'}</button>
           )}
+        </Card>
+      )}
+
+      {/* Galería de screenshots + capacidades */}
+      {(shots.length > 0 || (media?.capabilities?.length)) && (
+        <Card className="p-4 space-y-3">
+          {shots.length > 0 && (
+            <div>
+              <img src={shots[shot]} alt="" className="w-full max-h-[420px] object-cover rounded-md bg-muted" />
+              {shots.length > 1 && (
+                <div className="flex gap-2 mt-2 overflow-x-auto pb-1">
+                  {shots.map((s, i) => (
+                    <img key={i} src={s} alt="" onClick={() => setShot(i)}
+                      className={`h-14 w-24 object-cover rounded cursor-pointer flex-shrink-0 ${i === shot ? 'ring-2 ring-primary' : 'opacity-70'}`} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {media?.capabilities?.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {media.capabilities.map((c: string) => <Badge key={c} variant="outline" className="text-[0.65rem]">{c}</Badge>)}
+            </div>
+          )}
+          {media?.trailer && <a href={media.trailer} target="_blank" rel="noopener noreferrer" className="text-sm text-primary inline-flex items-center gap-1"><ExternalLink className="h-3.5 w-3.5" /> Ver tráiler</a>}
         </Card>
       )}
 
@@ -201,6 +244,47 @@ export function ProductDetail({ productId, onBack }: { productId: string; onBack
                 <span className="tabular-nums">{v.currency} {v.list_price} {v.price_usd != null && <span className="text-muted-foreground">(${Number(v.price_usd).toFixed(2)})</span>}</span>
               </div>
             ))}
+          </div>
+        </Card>
+      )}
+
+      {/* A los usuarios también les gusta esto */}
+      {related.length > 0 && (
+        <Card className="p-4">
+          <h2 className="font-semibold mb-3">A los usuarios también les gusta esto</h2>
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+            {related.map((r: any) => (
+              <button key={r.product_id} onClick={() => open(r.product_id)} className="group text-left">
+                {r.image_boxart
+                  ? <img src={r.image_boxart} alt={r.title} loading="lazy" className="w-full aspect-square object-cover rounded-md bg-muted group-hover:opacity-90" />
+                  : <div className="w-full aspect-square rounded-md bg-muted flex items-center justify-center font-bold text-muted-foreground">{(r.title || '?').slice(0, 1)}</div>}
+                <div className="text-xs mt-1 line-clamp-2 group-hover:underline">{r.title}</div>
+                {r.cheapest?.price_usd != null && <div className="text-[0.7rem] text-muted-foreground">desde ${Number(r.cheapest.price_usd).toFixed(2)} {flag(r.cheapest.market)}</div>}
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Reseñas */}
+      {reviews?.ratingsSummary && (
+        <Card className="p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <h2 className="font-semibold">Opiniones</h2>
+            <span className="inline-flex items-center gap-1 text-sm"><Star className="h-4 w-4 fill-yellow-400 text-yellow-400" /> {Number(reviews.ratingsSummary.averageRating).toFixed(1)} <span className="text-muted-foreground">({reviews.ratingsSummary.totalRatingsCount})</span></span>
+          </div>
+          <div className="space-y-3">
+            {(reviews.reviews || []).slice(0, 8).map((rv: any) => (
+              <div key={rv.reviewId} className="border-b border-border/50 pb-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="inline-flex items-center gap-0.5 text-yellow-500">{'★'.repeat(Math.round(rv.rating))}<span className="text-muted-foreground">{'★'.repeat(5 - Math.round(rv.rating))}</span></span>
+                  <span className="font-medium">{rv.title}</span>
+                  <span className="text-xs text-muted-foreground">· {rv.userName} · {String(rv.submittedDateTime || '').slice(0, 10)}</span>
+                </div>
+                <p className="text-sm text-muted-foreground mt-0.5 whitespace-pre-line">{rv.reviewText}</p>
+              </div>
+            ))}
+            {(!reviews.reviews || reviews.reviews.length === 0) && <div className="text-sm text-muted-foreground">Sin reseñas.</div>}
           </div>
         </Card>
       )}
