@@ -28,6 +28,37 @@ def q(sql: str, args: tuple = ()) -> list[dict]:
             cur.execute(sql, args)
             return [dict(r) for r in cur.fetchall()]
     finally:
+        conn.rollback()          # cerrar la tx implícita (no dejar idle-in-transaction)
+        p.putconn(conn)
+
+
+class TooHeavy(Exception):
+    """La query de subconjunto excedió el presupuesto de tiempo (protección free-tier)."""
+
+
+def q_guarded(sql: str, args: tuple = (), ms: int = 9000) -> list[dict]:
+    """Como q() pero con presupuesto de tiempo REAL, para proteger a Supabase NANO
+    de agregaciones pesadas (incluir/excluir países sobre muchos mercados).
+    Doble red: SET LOCAL statement_timeout + watchdog client-side conn.cancel().
+    Si se pasa del presupuesto, levanta TooHeavy."""
+    import threading
+    import psycopg2
+    import psycopg2.errors
+    p = pool()
+    conn = p.getconn()
+    conn.rollback()                                   # limpiar cualquier tx previa
+    timer = threading.Timer(ms / 1000 + 2.0, conn.cancel)
+    timer.start()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("set local statement_timeout = %s", (ms,))
+            cur.execute(sql, args)
+            return [dict(r) for r in cur.fetchall()]
+    except (psycopg2.errors.QueryCanceled, psycopg2.extensions.QueryCanceledError):
+        raise TooHeavy()
+    finally:
+        timer.cancel()
+        conn.rollback()
         p.putconn(conn)
 
 
@@ -103,6 +134,155 @@ def catalog_deals(sort: str = "savings", limit: int = 24, offset: int = 0,
             "discount_pct": 0, "on_sale": r.pop("on_sale"), "sale_ends": r.pop("sale_ends"),
         }
     return rows
+
+
+# ---- Catálogo estilo xbox-now: presets + orden + incluir/excluir países ----
+
+_CAT_COLS = (
+    "p.product_id, p.title, p.image_boxart, p.publisher, p.product_type, "
+    "p.kind, p.is_demo, p.on_pc, p.on_xbox, p.console_gen, p.has_addons, "
+    "p.release_date, p.short_desc"
+)
+
+# presets que SÍ tienen datos (los demás se muestran deshabilitados en la UI).
+# Referencian columnas de SALIDA del INNER (sin prefijo p.), válidas en ambos caminos.
+_PRESET_WHERE = {
+    "": "",
+    "everything": "",
+    "discounts": "savings_pct >= 1",
+    "non_gold": "on_sale and (gold_required is not true) and savings_pct >= 1",
+    "free": "is_free",
+    "play_anywhere": "on_pc and on_xbox",
+    "series_x": "'ConsoleGen9' = any(console_gen)",
+    "dlc": "kind = 'DLC'",
+    "games": "kind = 'Juego'",
+}
+
+_SORT = {
+    "savings": "savings_pct desc nulls last, product_id",
+    "cheapest": "cheapest_usd asc nulls last, product_id",
+    "price_desc": "cheapest_usd desc nulls last, product_id",
+    "name": "title asc",
+    "last_added": "release_date desc nulls last, product_id",
+}
+
+
+def _priced_markets() -> list[str]:
+    return [r["market"] for r in q("select distinct market from prices")]
+
+
+# Cache chico de totales: solo cambian tras un refresh de datos, así que no vale
+# pagar el count (join sobre ~38k) en cada carga de página. TTL 10 min.
+import time as _time
+_count_cache: dict[str, tuple[float, int]] = {}
+
+
+def _cached_total(key: str, fn, ttl: float = 600.0) -> int:
+    hit = _count_cache.get(key)
+    if hit and (_time.monotonic() - hit[0]) < ttl:
+        return hit[1]
+    val = fn()
+    _count_cache[key] = (_time.monotonic(), val)
+    return val
+
+
+_CAT_EXTRA = "p.is_free, p.gold_required"   # columnas extra que los presets necesitan
+
+
+def catalog(sort: str = "savings", limit: int = 24, offset: int = 0,
+            preset: str = "", min_savings: int = 0,
+            include: list[str] | None = None, exclude: list[str] | None = None) -> dict:
+    """Catálogo estilo xbox-now. Sin países => usa `deals` (rápido). Con países =>
+    recalcula la región más barata sobre el subconjunto (más pesado, gated).
+    Ambos caminos producen un INNER normalizado; el preset filtra sobre sus columnas."""
+    order = _SORT.get(sort, _SORT["savings"])
+
+    # "Free Games": los F2P tienen precio $0, así que NO están en `deals`
+    # (exige list_price>0). Se listan directo desde products.
+    if preset == "free":
+        forder = {"name": "p.title asc", "last_added": "p.release_date desc nulls last, p.product_id"}\
+            .get(sort, "p.rating_count desc nulls last, p.product_id")
+        total = _cached_total("free", lambda: q("select count(*) as n from products where is_free")[0]["n"])
+        rows = q(f"select {_CAT_COLS}, {_CAT_EXTRA}, 0 as us_usd, null as cheapest_market, "
+                 "null as cheapest_currency, null as cheapest_list, 0 as cheapest_usd, "
+                 "0 as savings_pct, false as on_sale, null::timestamptz as sale_ends "
+                 f"from products p where p.is_free order by {forder} limit %s offset %s",
+                 (limit, offset))
+        for r in rows:
+            r["us_currency"] = "USD"; r["us_list"] = 0; r["us_disc"] = 0; r["cheapest"] = None
+        return {"total": total, "items": rows}
+
+    where_parts = []
+    filt_args: list = []
+    pw = _PRESET_WHERE.get(preset or "", "")
+    if pw:
+        where_parts.append(pw)
+    if min_savings > 0:
+        where_parts.append("savings_pct >= %s")
+        filt_args.append(min_savings)
+    w = (" where " + " and ".join(where_parts)) if where_parts else ""
+
+    include = [m.upper() for m in (include or []) if m.strip()]
+    exclude = [m.upper() for m in (exclude or []) if m.strip()]
+
+    # total SIEMPRE por el camino rápido (deals), directo sobre el join (las columnas
+    # del preset son inambiguas entre deals y products). Con países filtrados el total
+    # cambia poquísimo, y así evitamos una 2ª agregación pesada: solo pagamos la página.
+    ckey = f"{preset}|{min_savings}"
+    total = _cached_total(
+        ckey,
+        lambda: q(f"select count(*) as n from deals d join products p using (product_id){w}",
+                  tuple(filt_args))[0]["n"])
+
+    if include or exclude:
+        markets = include if include else [m for m in _priced_markets() if m not in set(exclude)]
+        savings_expr = ("case when us.us_usd > 0 and sub.cheapest_usd is not null "
+                        "then greatest(0, round(100*(us.us_usd - sub.cheapest_usd)/us.us_usd)) "
+                        "else 0 end")
+        inner = (
+            "with sub as ("
+            "  select distinct on (product_id) product_id, market as cheapest_market, "
+            "  currency as cheapest_currency, list_price as cheapest_list, "
+            "  price_usd as cheapest_usd, on_sale, sale_ends "
+            "  from prices where market = any(%s) and price_usd is not null and list_price > 0 "
+            "  order by product_id, price_usd asc"
+            "), us as (select product_id, price_usd as us_usd from prices where market = 'US') "
+            f"select {_CAT_COLS}, {_CAT_EXTRA}, us.us_usd, sub.cheapest_market, "
+            f"sub.cheapest_currency, sub.cheapest_list, sub.cheapest_usd, {savings_expr} as savings_pct, "
+            "sub.on_sale, sub.sale_ends "
+            "from sub join products p using (product_id) left join us using (product_id)"
+        )
+        rows = q_guarded(f"select * from ({inner}) c{w} order by {order} limit %s offset %s",
+                         tuple([markets] + filt_args + [limit, offset]), ms=9000)
+    else:
+        rows = q(f"select {_CAT_COLS}, d.us_usd, d.cheapest_market, d.cheapest_currency, "
+                 "d.cheapest_list, d.cheapest_usd, d.savings_pct, d.on_sale, d.sale_ends "
+                 f"from deals d join products p using (product_id){w} "
+                 f"order by {order} limit %s offset %s",
+                 tuple(filt_args + [limit, offset]))
+
+    for r in rows:
+        r["us_currency"] = "USD"
+        r["us_list"] = r.get("us_usd")
+        r["us_disc"] = 0
+        r["cheapest"] = {
+            "market": r.pop("cheapest_market"), "currency": r.pop("cheapest_currency"),
+            "list_price": r.pop("cheapest_list"), "price_usd": r.pop("cheapest_usd"),
+            "discount_pct": 0, "on_sale": r.pop("on_sale"), "sale_ends": r.pop("sale_ends"),
+        }
+    return {"total": total, "items": rows}
+
+
+def trending(limit: int = 12) -> list[dict]:
+    """'What's Trending': juegos más valorados (rating_count) con su mejor precio."""
+    return q(
+        "select p.product_id, p.title, p.image_boxart, p.on_pc, p.on_xbox, "
+        "d.cheapest_market, d.cheapest_currency, d.cheapest_list, d.cheapest_usd "
+        "from products p join deals d using (product_id) "
+        "where p.kind = 'Juego' and p.rating_count is not null "
+        "order by p.rating_count desc nulls last limit %s",
+        (min(limit, 24),),
+    )
 
 
 def fx_rates_map() -> dict:

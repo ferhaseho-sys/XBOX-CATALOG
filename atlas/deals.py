@@ -55,6 +55,17 @@ on conflict (product_id) do update set
 """
 
 
+# is_free a nivel producto (para el preset "Free Games" del catálogo): un Juego
+# con al menos un precio F2P real. Se deriva de prices.is_free (ya corregido).
+FREE_FLAG = """
+update products p set is_free = coalesce((
+    select bool_or(pr.is_free) from prices pr where pr.product_id = p.product_id
+), false)
+where p.kind = 'Juego';
+update products set is_free = false where kind is distinct from 'Juego';
+"""
+
+
 def main():
     conn = db.connect()
     try:
@@ -66,6 +77,9 @@ def main():
             n = cur.rowcount
             conn.commit()
             print(f"[deals] {n} productos con resumen de oferta")
+            cur.execute(FREE_FLAG)
+            conn.commit()
+            print("[deals] products.is_free recalculado")
     finally:
         conn.close()
 

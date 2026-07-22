@@ -140,10 +140,34 @@ def api_games(limit: int = 1000, after: str = ""):
 
 
 @app.get("/api/catalog")
-def api_catalog(sort: str = "savings", page: int = 1, min_savings: int = 0, limit: int = 24):
-    """Catálogo estilo xbox-now, ordenable por mejor oferta (desde `deals`)."""
+def api_catalog(sort: str = "savings", page: int = 1, min_savings: int = 0,
+                limit: int = 24, preset: str = "", include: str = "", exclude: str = ""):
+    """Catálogo estilo xbox-now: presets + incluir/excluir países + paginación.
+    Devuelve {total, items}. Con países filtrados recalcula la región más barata
+    sobre el subconjunto (protegido con timeout para no saturar el free-tier)."""
     page = max(page, 1)
-    return Q.catalog_deals(sort, min(limit, 60), (page - 1) * min(limit, 60), min_savings)
+    lim = min(limit, 60)
+    inc = [m for m in include.split(",") if m.strip()]
+    exc = [m for m in exclude.split(",") if m.strip()]
+    try:
+        return Q.catalog(sort, lim, (page - 1) * lim, preset, min_savings, inc, exc)
+    except Q.TooHeavy:
+        raise HTTPException(
+            503, "La selección de países es demasiado amplia para el free-tier. "
+                 "Probá incluir menos países (o excluir menos).")
+
+
+@app.get("/api/trending")
+def api_trending(limit: int = 12):
+    """'What's Trending': juegos más valorados con su mejor precio."""
+    return Q.trending(limit)
+
+
+@app.get("/api/catalog/markets")
+def api_catalog_markets():
+    """Mercados con precios guardados (para el selector de incluir/excluir países).
+    El front resuelve nombre/bandera con Intl.DisplayNames a partir del código."""
+    return Q.markets_list()
 
 
 @app.get("/api/fx")

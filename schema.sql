@@ -18,6 +18,7 @@ create table if not exists products (
     is_demo              boolean,        -- true si es demo/trial (no un juego gratis real)
     on_pc                boolean,        -- AllowedPlatforms ∋ Windows.Desktop (corre en PC)
     on_xbox              boolean,        -- AllowedPlatforms ∋ Windows.Xbox (corre en consola)
+    is_free              boolean,        -- F2P real (Juego con precio $0 en algún mercado). Lo recalcula atlas/deals.py
     categories           text[],
     release_date         date,
     min_user_age         int,
