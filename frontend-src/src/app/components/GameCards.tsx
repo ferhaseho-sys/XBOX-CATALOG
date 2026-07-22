@@ -48,7 +48,7 @@ const PRESETS: { value: string; label: string; off?: boolean }[] = [
   { value: 'giftcard', label: 'Países con Gift Card (próximamente)', off: true },
 ];
 
-export function GameCards({ initialPreset = '', title }: { initialPreset?: string; title?: string }) {
+export function GameCards({ initialPreset = '', title, onOpen }: { initialPreset?: string; title?: string; onOpen?: (id: string) => void }) {
   const [games, setGames] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -246,7 +246,8 @@ export function GameCards({ initialPreset = '', title }: { initialPreset?: strin
               <div className="flex gap-4">
                 {g.image_boxart ? (
                   <img src={g.image_boxart} alt={g.title} loading="lazy"
-                    className="w-[90px] h-[126px] object-cover rounded-md bg-muted flex-shrink-0"
+                    onClick={() => onOpen && onOpen(g.product_id)}
+                    className={`w-[90px] h-[126px] object-cover rounded-md bg-muted flex-shrink-0 ${onOpen ? 'cursor-pointer' : ''}`}
                     onError={(e: any) => { e.currentTarget.onerror = null; e.currentTarget.className += ' opacity-0'; }} />
                 ) : (
                   <div className="w-[90px] h-[126px] rounded-md bg-muted flex items-center justify-center text-2xl font-bold text-muted-foreground flex-shrink-0">
@@ -255,10 +256,10 @@ export function GameCards({ initialPreset = '', title }: { initialPreset?: strin
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <a className="font-semibold hover:underline truncate"
-                      href={`https://www.xbox.com/games/store/_/${g.product_id}`} target="_blank" rel="noopener noreferrer">
+                    <button className="font-semibold hover:underline truncate text-left"
+                      onClick={() => (onOpen ? onOpen(g.product_id) : window.open(`https://www.xbox.com/games/store/_/${g.product_id}`, '_blank'))}>
                       {g.title}
-                    </a>
+                    </button>
                     {g.is_demo && <Badge variant="destructive" className="text-[0.65rem]">Demo</Badge>}
                     {badgesOf(g).map((b) => <Badge key={b} variant="secondary" className="text-[0.65rem]">{b}</Badge>)}
                   </div>

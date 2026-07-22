@@ -16,6 +16,7 @@ import { BulkUploadManager } from './components/BulkUploadManager';
 import RegionalPriceExplorer from './components/RegionalPriceExplorer';
 import { VariantExplorer } from './components/VariantExplorer';
 import { GameCards } from './components/GameCards';
+import { ProductDetail } from './components/ProductDetail';
 import { Sidebar, NAV_GROUPS, NavItem } from './components/Sidebar';
 import { useScraper } from './hooks/useScraper';
 
@@ -25,6 +26,7 @@ export default function App() {
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
   const [isElectron, setIsElectron] = useState(false);
   const [appVersion, setAppVersion] = useState('2.0.0');
+  const [productId, setProductId] = useState<string | null>(null); // ficha de detalle abierta
 
   const {
     games, selectedGames, regionStats, priceHistory, progress,
@@ -45,10 +47,11 @@ export default function App() {
   const selectedGameObjects = useMemo(
     () => games.filter((g) => selectedGames.has(g.id)), [games, selectedGames]);
 
-  const onSelect = (it: NavItem) => { if (it.kind !== 'soon') setSel(it); };
+  const onSelect = (it: NavItem) => { if (it.kind !== 'soon') { setProductId(null); setSel(it); } };
 
   const renderContent = () => {
-    if (sel.kind === 'catalog') return <GameCards initialPreset={sel.preset || ''} title={sel.label} />;
+    if (productId) return <ProductDetail productId={productId} onBack={() => setProductId(null)} />;
+    if (sel.kind === 'catalog') return <GameCards initialPreset={sel.preset || ''} title={sel.label} onOpen={setProductId} />;
     switch (sel.key) {
       case 'regional': return <RegionalPriceExplorer />;
       case 'viewer': return <XboxProductViewer />;
@@ -98,7 +101,7 @@ export default function App() {
 
           <main className="px-4 sm:px-6 py-5 space-y-5">
             {/* Control de análisis (actualizar catálogo) solo en la vista de catálogo */}
-            {sel.kind === 'catalog' && (
+            {sel.kind === 'catalog' && !productId && (
               <ScrapingControls
                 progress={progress}
                 onStartScraping={startScraping}
