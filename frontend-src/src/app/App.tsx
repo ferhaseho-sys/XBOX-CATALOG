@@ -19,6 +19,7 @@ import { GameCards } from './components/GameCards';
 import { ProductDetail } from './components/ProductDetail';
 import { Sidebar, NAV_GROUPS, NavItem } from './components/Sidebar';
 import { useScraper } from './hooks/useScraper';
+import { isAdmin } from './lib/admin';
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(true);
@@ -106,8 +107,9 @@ export default function App() {
           </header>
 
           <main className="px-4 sm:px-6 py-5 space-y-5">
-            {/* Control de análisis (actualizar catálogo) solo en la vista de catálogo */}
-            {sel.kind === 'catalog' && !productId && (
+            {/* Actualizar catálogo: SOLO ADMIN. El público ve únicamente el catálogo;
+                la ingesta es una herramienta interna. La API igual rechaza sin token. */}
+            {sel.kind === 'catalog' && !productId && isAdmin() && (
               <ScrapingControls
                 progress={progress}
                 onStartScraping={startScraping}

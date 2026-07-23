@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Game, RegionStats, PriceHistory, ScrapingProgress, ScrapingConfig } from '../types/scraper';
+import { adminToken } from '../lib/admin';
 
 // Mock data para desarrollo
 const mockGames: Game[] = [
@@ -214,8 +215,16 @@ export function useScraper() {
     const ATLAS_API = (import.meta as any).env?.VITE_ATLAS_API || 'http://127.0.0.1:8000';
     scrapingWorkerRef.current = new AbortController();
     setProgress(prev => ({ ...prev, isActive: true, status: 'Iniciando análisis…', startTime: Date.now(), errors: [] }));
+    // La ingesta es SOLO ADMIN (ver lib/admin.ts). Sin token la API responde 401.
+    const adminHeaders = { 'X-Admin-Token': adminToken() };
     try {
-      await fetch(`${ATLAS_API}/api/analysis/start`, { method: 'POST' });
+      const r = await fetch(`${ATLAS_API}/api/analysis/start`,
+                            { method: 'POST', headers: adminHeaders });
+      if (r.status === 401 || r.status === 503) {
+        setProgress(prev => ({ ...prev, isActive: false,
+          status: 'Necesitás permisos de administrador para actualizar el catálogo.' }));
+        return;
+      }
     } catch {
       setProgress(prev => ({ ...prev, isActive: false, status: 'No se pudo iniciar (¿API arriba?)' }));
       return;
@@ -223,7 +232,8 @@ export function useScraper() {
     const poll = async () => {
       if (scrapingWorkerRef.current?.signal.aborted) return;
       try {
-        const s = await fetch(`${ATLAS_API}/api/analysis/status`).then(r => r.json());
+        const s = await fetch(`${ATLAS_API}/api/analysis/status`,
+                              { headers: adminHeaders }).then(r => r.json());
         const labels: Record<string, string> = {
           discovery: 'Analizando sitemaps y catálogo…', pricing: 'Obteniendo precios por mercado…',
           fx: 'Convirtiendo a USD…', done: 'Análisis completo ✓', error: 'Error en el análisis',

@@ -19,6 +19,10 @@
   --destructive: #d4183d;
   --destructive-foreground: #ffffff;
   --border: rgba(0, 0, 0, 0.1);
+  /* pulgar de la barra de scroll: gris translúcido, se apoya en el fondo real
+     del contenedor en lugar de imponer un riel opaco */
+  --scrollbar-thumb: rgba(0, 0, 0, 0.22);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.38);
   --input: transparent;
   --input-background: #f3f3f5;
   --switch-background: #cbced4;
@@ -44,6 +48,8 @@
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.20);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.34);
   --card: oklch(0.145 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.145 0 0);
@@ -130,6 +136,52 @@
 }
 
 /**
+ * Scrollbars.
+ *
+ * Sin esto Windows dibuja su barra nativa (riel blanco, pulgar gris grueso), que
+ * sobre una card oscura se ve como una tira blanca partiendo el layout. Se estiliza
+ * con las variables del tema, así sigue automáticamente a claro/oscuro.
+ *
+ * Se declaran las dos sintaxis: `scrollbar-*` (estándar, Firefox y Chrome 121+) y
+ * `::-webkit-scrollbar` (para el resto de los WebKit/Blink).
+ */
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  /* riel transparente: hereda el fondo del contenedor en vez de imponer blanco */
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border-radius: 9999px;
+    /* borde transparente + background-clip: deja aire a los lados del pulgar
+       sin necesidad de un riel pintado */
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+
+  /* la barra solo aparece cuando hace falta, no reserva ancho fijo */
+  *::-webkit-scrollbar-button {
+    display: none;
+  }
+}
+
+/**
  * Base typography. This is not applied to elements which have an ancestor with a Tailwind text class.
  */
 @layer base {
@@ -186,4 +238,8 @@
 
 html {
   font-size: var(--font-size);
+  /* Reserva el ancho de la barra SIEMPRE. Sin esto, cada vez que el scroll del
+     body se bloquea (al abrir un modal) la barra desaparece, el viewport gana
+     ~15px y toda la página salta hacia la derecha. */
+  scrollbar-gutter: stable;
 }
