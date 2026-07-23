@@ -61,7 +61,15 @@ create table if not exists prices (
     updated_at     timestamptz default now(),
     primary key (product_id, market)
 );
+-- Estadísticas históricas. Van COMO COLUMNAS de `prices` y no en una tabla
+-- aparte: `prices` ya es 1 fila por (product_id, market), así que una tabla
+-- `price_stats` sería duplicar ~1M de filas y agregar un join para nada.
+-- Las mantiene `db.upsert_prices` en el mismo lote que detecta el cambio.
+alter table prices add column if not exists min_ever      numeric(12,2);
+alter table prices add column if not exists min_ever_on   date;
+alter table prices add column if not exists is_at_min     boolean default false;
 create index if not exists idx_prices_market   on prices (market);
+create index if not exists idx_prices_at_min   on prices (market) where is_at_min;
 create index if not exists idx_prices_usd       on prices (price_usd);
 create index if not exists idx_prices_discount  on prices (discount_pct);
 
@@ -85,6 +93,37 @@ create table if not exists variants (
     primary key (product_id, market, sku_id)
 );
 create index if not exists idx_variants_product on variants (product_id);
+
+-- ============ Histórico de precios (solo CAMBIOS, no snapshots) ============
+-- Es el bus de eventos del negocio: alertas, publicaciones en Gameflip, avisos
+-- en Discord y redes son todos consumidores de "cambió el precio de X en Y".
+--
+-- Solo se inserta cuando el precio DIFIERE del anterior. Un snapshot diario
+-- completo serían ~1M de filas por día (imposible en el free tier); con deltas
+-- reales (1-3% de cambio diario) son ~20k.
+--
+-- PARTICIONADA POR FECHA DESDE EL DÍA UNO: convertir una tabla grande a
+-- particionada después obliga a reescribirla entera. Declararla así hoy no
+-- cuesta nada y evita esa migración.
+-- Sin FK a products: las FK en tablas particionadas de alto volumen encarecen
+-- cada escritura (mismo criterio que `variants`).
+create table if not exists price_history (
+    product_id    text not null,
+    market        text not null,
+    seen_on       date not null,
+    list_price    numeric(12,2),
+    msrp          numeric(12,2),
+    discount_pct  int,
+    currency      text,
+    primary key (product_id, market, seen_on)   -- la PK DEBE incluir la clave de partición
+) partition by range (seen_on);
+
+-- Particiones: las crea `atlas/history.py` a demanda (uná por mes). La default
+-- atrapa cualquier fecha sin partición para que un insert nunca falle.
+create table if not exists price_history_default partition of price_history default;
+
+-- "qué cambió hoy en AR" — el feed de novedades y el disparador de las alertas
+create index if not exists idx_phist_market_dia on price_history (market, seen_on desc);
 
 -- ============ Disponibilidad por mercado (fuente: Emerald Browse) ============
 -- 1 fila por producto × mercado. NO reemplaza a `prices`: aporta las dimensiones

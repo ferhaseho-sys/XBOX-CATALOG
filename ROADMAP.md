@@ -43,6 +43,35 @@ La plataforma tiene dos caras: **pública** (comparador, SEO, publicidad) e
 separadas por el token de admin (§6d). Toda feature nueva debe declarar de qué
 lado cae antes de escribirse.
 
+### Por qué se registraría un usuario (decidido)
+
+De todo lo que se puede ofrecer (newsletter, Discord, comunidad, cuenta), **una
+sola cosa vale un email**:
+
+> "Avisame cuando Elden Ring baje de $20."
+
+Nadie se registra para que le vendan. Se registra por un servicio. Y el que deja
+su mail para una alerta te acaba de decir **qué juego quiere, cuánto está
+dispuesto a pagar y que tiene intención de comprar**: es el lead más calificado
+posible, y gratis.
+
+Todo lo demás viene después y viene solo: el Discord se ofrece en el mail de la
+alerta, las noticias se mandan porque ya tenés el mail, y cuando el juego baja no
+mandás solo la alerta — **mandás tu precio**. Ahí el comparador se vuelve venta.
+
+Sin alerta, "Register" es una pared antes del contenido. Con alerta, es un
+servicio que la gente pide. **Y la alerta necesita `price_history` primero:** no
+podés avisar que algo bajó si no sabés cuánto valía ayer.
+
+### Plazos realistas (calibrado jul-2026)
+
+- **Este mes:** catálogo estable + histórico + fichas indexables. Es lo que
+  empieza a acumular el activo (datos históricos y posicionamiento).
+- **2-3 meses:** núcleo con un camino de ingresos funcionando (alertas +
+  primeras automatizaciones).
+- El ecosistema completo (ventas propias, multicanal, herramientas de vendedor)
+  es incremental encima de eso. No hay que esperarlo para empezar a cobrar.
+
 ---
 
 ## 1. Qué es
@@ -164,6 +193,32 @@ en vez de la ingesta: corría 6 h, Railway lo mataba, y `pricing` no corrió por
 - **Ético/legal:** NO construir features de evasión regional (tutoriales VPN,
   "truco de Brasil"). Comparar precios = OK; enseñar a evadir ToS = NO.
 - **Python 3.14 local / 3.12 Railway** (`.python-version`).
+- **`ADMIN_TOKEN` queda en las capas de la imagen Docker** (Railway lo pasa como
+  ARG/ENV y el build lo avisa). Con imagen privada no es crítico; si alguna vez
+  se publica, el token va adentro. Se arregla marcándolo como *secret* en Railway.
+
+### ⚠️ Saturación de Supabase (jul-2026) — el techo del free tier
+
+Al correr el primer `refresh` real, el NANO se saturó: el dashboard mostró
+*"Your project is currently exhausting multiple resources"*, las conexiones
+pasaron de ~2 s a **105 s**, y `/api/catalog` y `/api/stats` devolvieron **500
+después de 2 minutos**. El sitio quedó sirviendo el frontend sin datos.
+
+**La causa es un patrón de escritura, no el volumen de datos.** Hoy
+`upsert_prices` hace `DO UPDATE SET …, updated_at=now()` sobre las ~933.000
+filas **cambien o no de precio**. En un día normal cambia el 1-3%: se escriben
+933k filas para actualizar ~20k.
+
+**El arreglo es el delta de la Fase 2** (P0 #1). Agregar
+`WHERE prices.list_price IS DISTINCT FROM excluded.list_price` hace que las filas
+sin cambio no se toquen: **~98% menos write IO**.
+
+> Corrección importante: en su momento se dijo que el histórico "agrega
+> escrituras sobre una base que ya está al límite". **Es al revés.** La Fase 2 es
+> lo que MÁS IO ahorra de todo lo pendiente. Las filas de `price_history` son las
+> mismas ~20k que ya cambiaron, escritas en una tabla que nadie lee en caliente.
+
+**Orden correcto: implementar el delta → medir → recién ahí decidir si se paga.**
 
 ## 6b. Categorización — hallazgos (análisis de los 43k, jul-2026)
 
@@ -213,6 +268,30 @@ vector; no valida el contenido). Funciona server-side desde Python con
 Cobertura AR lograda: **18.251 productos** (15.403 browse + 2.848 rescatados),
 1.058 en Game Pass, 15 con fecha de entrada, 9 con fecha de salida.
 
+## 6e. Otros endpoints de Microsoft (jul-2026) — sin explotar todavía
+
+**`displaycatalog …/products/lookup?alternateId=InAppOfferToken&value=<nombre>`**
+🔥 Busca por **nombre de oferta** en vez de ProductId. Resuelve el pendiente de
+descubrir consumibles y suscripciones que **NO están en los sitemaps**
+(Fortnite Crew, pases musicales, V-Bucks). Ejemplo verificado:
+`value=Fortnite - S14 Giftable Music Pass`.
+
+**`storeedgefd.dsx.mp.microsoft.com/v9.0/pages/pdp?productId=…`**
+Devuelve la página ya armada: textos, imágenes, módulos y **reseñas**. Es
+contenido listo para renderizar en las fichas SEO — y contenido es justo lo que
+Google necesita. Pide muchos parámetros (`market`, `locale`, `deviceFamily`,
+`hardware`, `appversion`).
+
+Campos útiles del `lookup` con `fieldsTemplate=details`:
+
+| Campo | Valor real |
+|---|---|
+| `MarketProperties[].RelatedProducts` con `RelationshipType: "addOnParent"` | 🔥 el vínculo DLC → juego padre; llena `product_relations` |
+| `Sku.Properties.IsPreOrder` | el badge de preventa que faltaba |
+| `MarketProperties[].UsageData` (PlayCount, PurchaseCount) | "Los más jugados" real; venía en 0 en los ejemplos vistos |
+| `Price.WholesalePrice` | ⚠️ **NO es tu costo**: es el 70/30 de MS con el publisher. Medido en el dump: 30,0-30,1% constante en 4.064 de 5.000 productos. Solo interesa donde se desvía del 30% |
+| `FulfillmentData`, `PackageDownloadUris`, `SatisfyingEntitlementKeys` | ❌ son para el cliente de Xbox al instalar. No usar |
+
 ## 6d. Seguridad
 
 `/api/analysis/*` y todo `/api/admin/*` exigen el header **`X-Admin-Token`**
@@ -227,7 +306,9 @@ protege de verdad es el 401 de la API.
 ## 7. Roadmap (repriorizado según §0)
 
 ### P0 — el motor del negocio
-1. **`price_history`** — es el bus de eventos, no una feature de usuario.
+1. **`price_history`** — es el bus de eventos, no una feature de usuario. **Y
+   además es lo que baja el write IO un 98%** (ver §6 "Saturación"), así que
+   arreglar la base y construir el histórico son la misma tarea.
    Diseño ya decidido:
    - Delta detectado **dentro de `upsert_prices`** con
      `ON CONFLICT … DO UPDATE … WHERE price IS DISTINCT FROM … RETURNING`:
@@ -280,8 +361,23 @@ protege de verdad es el 401 de la API.
   las 7 ingestas desde la web.
 - ✅ Ingesta protegida con token; panel e integraciones ocultos al público.
 - ✅ Scrollbars estilizadas + `scrollbar-gutter: stable`.
-- ⚠️ **`pricing` no corre desde el 14-jul** (el cron nunca ejecutó: ver §4).
-  Los precios están congelados hasta que se corra.
+- ⚠️ **`pricing` no corre desde el 14-jul.** El cron ya quedó bien configurado
+  (el build muestra `start │ python -m atlas.refresh`), pero la primera corrida
+  saturó Supabase (§6). **Hay que implementar el delta ANTES de volver a
+  correrlo**, o se repite.
+
+### Decisión de infraestructura (pendiente, con criterio ya definido)
+
+No pagar todavía. Orden: **delta → medir → decidir**.
+
+| Opción | Realidad |
+|---|---|
+| Seguir en NANO | Muy posible que alcance una vez aplicado el delta |
+| **Postgres en Railway** | NO son $5: Railway cobra por uso y el Postgres suma RAM+CPU+volumen *encima* de web y cron. Presupuestar **$10-15/mes** por los tres. Ventaja real: elimina el pooler de Supabase, que fue parte del problema (conexiones de 105 s) |
+| Supabase Pro $25 | Fijo, 8 GB, sin límite de IO. El plan es por **organización**: sirve para varios proyectos |
+
+Si hay que pagar, **Railway** — no por precio sino por sacar el pooler del medio
+y tener la DB en la misma red que la app.
 
 ## 9. Para el chat nuevo
 

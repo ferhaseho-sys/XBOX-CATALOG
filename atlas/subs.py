@@ -57,11 +57,12 @@ def main():
     # 3) upsert al final (conexion fresca, sin idle durante el HTTP)
     conn = db.connect()
     try:
-        total = db.upsert_prices(conn, all_rows)
+        total, cambios = db.upsert_prices(conn, all_rows)
         nv = db.upsert_variants(conn, all_variants)
     finally:
         conn.close()
-    print(f"[subs] LISTO: {total} precios + {nv} variantes de suscripciones", flush=True)
+    print(f"[subs] LISTO: {total} precios ({cambios} cambios) + {nv} variantes "
+          f"de suscripciones", flush=True)
 
 
 if __name__ == "__main__":

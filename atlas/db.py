@@ -1,6 +1,7 @@
 """Acceso a Postgres (Supabase): conexion y upserts en lote."""
 from __future__ import annotations
 import json
+from datetime import date, timedelta
 import psycopg2
 from psycopg2.extras import execute_values
 from . import config
@@ -81,18 +82,101 @@ def upsert_products(conn, products: list[dict]) -> int:
     return len(rows)
 
 
-def upsert_prices(conn, prices: list[dict]) -> int:
-    """Solo inserta filas comprables (purchasable=True)."""
-    rows = [_row(p, PRICE_COLS) for p in prices if p.get("purchasable")]
+# Columnas que se INSERTAN además de PRICE_COLS. En una fila nueva el mínimo
+# histórico es el precio de hoy; en el UPDATE se recalculan con expresiones (ver
+# abajo), NUNCA con `excluded.*`, que traería este valor sembrado y pisaría el
+# mínimo real.
+_SEED_COLS = ["min_ever", "min_ever_on", "is_at_min"]
+
+_ensured_partitions: set[str] = set()
+
+
+def _ensure_partition(conn, day) -> None:
+    """Crea la partición del mes si falta. Existe `price_history_default` como
+    red de seguridad, pero las particiones mensuales son las que hacen que
+    "cambios de los últimos 7 días" no toque los años anteriores."""
+    key = day.strftime("%Y_%m")
+    if key in _ensured_partitions:
+        return
+    ini = day.replace(day=1)
+    fin = (ini + timedelta(days=32)).replace(day=1)
+    with conn.cursor() as cur:
+        cur.execute(
+            f"create table if not exists price_history_{key} partition of price_history "
+            f"for values from (%s) to (%s)", (ini, fin))
+    conn.commit()
+    _ensured_partitions.add(key)
+
+
+def _record_history(conn, changed: list[tuple]) -> int:
+    """Guarda los precios que CAMBIARON. `changed` viene del RETURNING del upsert,
+    así que no hace falta leer nada para saber qué cambió."""
+    hoy = date.today()
+    rows = [(pid, mkt, hoy, lp, msrp, disc, cur_)
+            for (pid, mkt, lp, msrp, disc, cur_) in changed
+            if mkt in config.HISTORY_MARKETS]
     if not rows:
         return 0
-    updates = ", ".join(f"{c}=excluded.{c}" for c in PRICE_COLS if c not in ("product_id", "market"))
-    sql = (f"insert into prices ({', '.join(PRICE_COLS)}) values %s "
-           f"on conflict (product_id, market) do update set {updates}, updated_at=now()")
+    _ensure_partition(conn, hoy)
+    # Si el precio cambia dos veces el mismo día queda el último: el histórico es
+    # diario a propósito (guardar cada oscilación multiplicaría el storage).
+    sql = ("insert into price_history "
+           "(product_id, market, seen_on, list_price, msrp, discount_pct, currency) "
+           "values %s "
+           "on conflict (product_id, market, seen_on) do update set "
+           "list_price=excluded.list_price, msrp=excluded.msrp, "
+           "discount_pct=excluded.discount_pct, currency=excluded.currency")
     with conn.cursor() as cur:
         execute_values(cur, sql, rows, page_size=500)
     conn.commit()
     return len(rows)
+
+
+def upsert_prices(conn, prices: list[dict]) -> tuple[int, int]:
+    """Guarda precios comprables y registra los CAMBIOS. Devuelve (filas, cambios).
+
+    La cláusula `where` es la pieza clave: sin ella el upsert reescribía las
+    ~933.000 filas en cada refresco aunque no cambiara ni un precio, lo que
+    saturó Supabase. Con ella solo se tocan las que de verdad cambiaron (1-3% en
+    un día normal): ~98% menos write IO.
+
+    El `returning` devuelve exactamente esas filas, así que el histórico sale
+    gratis: cero lecturas extra para saber qué cambió.
+
+    Efecto colateral aceptado: los campos que NO son precio (`on_sale`,
+    `sale_ends`) solo se refrescan cuando el precio se mueve. Una promo extendida
+    sin cambio de precio puede quedar con `sale_ends` viejo hasta el próximo
+    cambio real."""
+    usables = [p for p in prices if p.get("purchasable")]
+    if not usables:
+        return 0, 0
+
+    cols = PRICE_COLS + _SEED_COLS
+    hoy = date.today()
+    rows = []
+    for p in usables:
+        seed = dict(p, min_ever=p.get("list_price"), min_ever_on=hoy, is_at_min=True)
+        rows.append(_row(seed, cols))
+
+    updates = ", ".join(f"{c}=excluded.{c}" for c in PRICE_COLS
+                        if c not in ("product_id", "market"))
+    sql = (
+        f"insert into prices ({', '.join(cols)}) values %s "
+        f"on conflict (product_id, market) do update set {updates}, updated_at=now(), "
+        # mínimo histórico: se compara contra el valor GUARDADO, no contra el sembrado
+        "  min_ever = least(coalesce(prices.min_ever, excluded.list_price), excluded.list_price), "
+        "  min_ever_on = case when excluded.list_price < coalesce(prices.min_ever, excluded.list_price + 1) "
+        "                     then excluded.min_ever_on else prices.min_ever_on end, "
+        "  is_at_min = (excluded.list_price <= coalesce(prices.min_ever, excluded.list_price)) "
+        "where prices.list_price is distinct from excluded.list_price "
+        "   or prices.msrp is distinct from excluded.msrp "
+        "returning product_id, market, list_price, msrp, discount_pct, currency"
+    )
+    with conn.cursor() as cur:
+        changed = execute_values(cur, sql, rows, page_size=500, fetch=True)
+    conn.commit()
+    n_hist = _record_history(conn, changed or [])
+    return len(rows), n_hist
 
 
 def upsert_variants(conn, variants: list[dict]) -> int:

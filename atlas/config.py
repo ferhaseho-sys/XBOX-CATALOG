@@ -74,6 +74,15 @@ BROWSE_MAX_PAGES = int(os.environ.get("BROWSE_MAX_PAGES", "500"))   # corte de s
 BROWSE_LOCALES = [l.strip() for l in os.environ.get(
     "BROWSE_LOCALES", "es-AR,en-US").split(",") if l.strip()]
 
+# --- Historico de precios ---
+# Mercados de los que se guarda historial. Se arranca acotado por el free tier:
+# solo cambian ~1-3% de los precios por dia, asi que con estos ~18 mercados son
+# ~5-10k filas/dia (~150 MB/año). Ampliar es agregar mercados ACA; el esquema no
+# tiene ningun limite y soporta los 243.
+HISTORY_MARKETS = set(m.strip().upper() for m in os.environ.get(
+    "HISTORY_MARKETS",
+    "US,GB,AR,TR,BR,NG,IN,JP,MX,ZA,DE,PL,UA,CL,CO,TW,KR,ID").split(",") if m.strip())
+
 # Suscripciones conocidas que NO estan en los sitemaps de juegos (Xbox no las
 # sitemapea). Se siembran a mano; la lista se puede ampliar a medida que aparezcan.
 # (El discovery completo de subs seria recorrer los add-ons de cada juego.)

@@ -83,6 +83,7 @@ def phase_pricing(conn, client, markets):
 
     counts = {m: 0 for m in pending}
     total_rows = 0
+    total_changed = 0        # filas que REALMENTE cambiaron -> price_history
     done_lotes = 0
     with ThreadPoolExecutor(max_workers=config.WORKERS) as ex:
         futs = {ex.submit(fetch_price_chunk, client, m, chunk): m
@@ -94,9 +95,10 @@ def phase_pricing(conn, client, markets):
             except Exception as e:
                 rows = []
                 print(f"[pricing:{m}] lote error: {e}", flush=True)
-            n = db.upsert_prices(conn, rows)          # upsert incremental (hilo principal)
+            n, n_hist = db.upsert_prices(conn, rows)  # upsert incremental (hilo principal)
             counts[m] += n
             total_rows += n
+            total_changed += n_hist
             done_lotes += 1
             pending[m] -= 1
             if pending[m] == 0:                        # mercado completo -> log
@@ -109,11 +111,13 @@ def phase_pricing(conn, client, markets):
     dt = time.monotonic() - t0
     # fila resumen de TODA la fase (market=None): es la que responde
     # "¿cuánto tarda el refresh?" y si entra en la ventana del cron.
+    pct = (100 * total_changed / total_rows) if total_rows else 0
     db.log_run(conn, "pricing", None, "done", total_rows,
-               f"{len(pending)} mercados, {len(tasks)} lotes, {dt:.0f}s",
+               f"{len(pending)} mercados, {len(tasks)} lotes, {dt:.0f}s, "
+               f"{total_changed} cambios ({pct:.1f}%)",
                started_at=t_start)
-    print(f"[pricing] LISTO: {total_rows} precios en {dt:.0f}s "
-          f"({len(tasks)} lotes)", flush=True)
+    print(f"[pricing] LISTO: {total_rows} precios en {dt:.0f}s ({len(tasks)} lotes) | "
+          f"{total_changed} cambiaron ({pct:.1f}%) -> price_history", flush=True)
 
 
 def main(argv):
