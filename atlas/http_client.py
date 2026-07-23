@@ -123,13 +123,19 @@ class _BaseClient:
 class CatalogClient(_BaseClient):
     """displaycatalog: metadata + precios por mercado (bigIds hasta ~500)."""
 
-    def batch(self, product_ids: list[str], market: str, locale: str = "en-US") -> list[dict]:
-        """Devuelve la lista Products para hasta ~500 IDs."""
+    def batch(self, product_ids: list[str], market: str, locale: str = "en-US",
+              fields: str = "details") -> list[dict]:
+        """Devuelve la lista Products para hasta ~500 IDs.
+
+        `fields` es la palanca de velocidad: 'details' pesa 56 KB por producto y
+        'Browse' 12,6 KB (4,45x menos) trayendo igual DisplaySkuAvailabilities,
+        Actions y ListPrice/MSRP/CurrencyCode. Para precios alcanza 'Browse';
+        'details' solo hace falta en metadata, que necesita `Properties`."""
         params = {
             "bigIds": ",".join(product_ids),
             "market": market,
             "languages": locale,
-            "fieldsTemplate": "details",
+            "fieldsTemplate": fields,
         }
         data = self._get(BASE, params)
         if not data:

@@ -41,8 +41,14 @@ def market_chunks(ids: list[str], market: str):
 
 def fetch_price_chunk(client: CatalogClient, market: str, ids: list[str]) -> list[dict]:
     """Un solo lote: descarga + parsea precios. Pensado para correr en un pool
-    de fetchers; NO toca la DB (el hilo principal hace el upsert)."""
-    prods = client.batch(ids, market=market, locale=locale_for(market))
+    de fetchers; NO toca la DB (el hilo principal hace el upsert).
+
+    Usa `fieldsTemplate=Browse` (config.PRICING_FIELDS): trae lo mismo que
+    'details' para precificar pero pesa 4,45x menos. Con 24 workers eso es la
+    diferencia entre ~500 MB y ~120 MB en vuelo, que es lo que hacía que el
+    contenedor se quedara sin memoria y reiniciara a mitad del trabajo."""
+    prods = client.batch(ids, market=market, locale=locale_for(market),
+                         fields=config.PRICING_FIELDS)
     return [parse_price(p, market) for p in prods]
 
 

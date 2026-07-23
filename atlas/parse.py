@@ -111,8 +111,11 @@ def parse_price(product: dict, market: str) -> dict:
     paid = [o for o in offers if (o["list_price"] or 0.0) > 0.0]
     # "Free" SOLO para juegos F2P reales: Game, no demo, y todo comprable a 0.
     # (demos y DLC/consumibles a $0 tienen precio 0 pero NO son juegos gratis)
-    is_free = (len(paid) == 0 and (product.get("ProductType") == "Game")
-               and not is_demo(product))
+    # `fieldsTemplate=Browse` no devuelve ProductType, pero sí ProductKind, y en
+    # los 43k productos los dos campos coinciden siempre. Se acepta cualquiera
+    # para que el mismo parseo sirva con las dos plantillas.
+    kind = product.get("ProductType") or product.get("ProductKind")
+    is_free = (len(paid) == 0 and kind == "Game" and not is_demo(product))
 
     pool = paid if paid else offers
     best = min(pool, key=lambda o: (o["list_price"] if o["list_price"] is not None else 1e18))

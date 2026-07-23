@@ -20,6 +20,12 @@ BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "400"))       # la API acepta ~500
 WORKERS = int(os.environ.get("WORKERS", os.environ.get("MARKET_WORKERS", "24")))
 HTTP_TIMEOUT = int(os.environ.get("HTTP_TIMEOUT", "60"))    # lotes de 400 pueden tardar
 HTTP_POOL = int(os.environ.get("HTTP_POOL", "32"))          # debe ser >= WORKERS
+# Plantilla de campos para PRECIOS. Medido sobre 10 productos reales:
+#   details -> 56,1 KB por producto      Browse -> 12,6 KB  (4,45x menos)
+# 'Browse' igual trae DisplaySkuAvailabilities, Actions y ListPrice/MSRP/moneda,
+# que es todo lo que mira parse_price. La metadata sigue usando 'details' porque
+# necesita `Properties` (que Browse no manda).
+PRICING_FIELDS = os.environ.get("PRICING_FIELDS", "Browse")
 # compat: algunos modulos aun leen MARKET_WORKERS
 MARKET_WORKERS = WORKERS
 

@@ -43,13 +43,28 @@ def connect():
     return conn
 
 
+def _clean(v):
+    """Saca los NUL (0x00) de los textos.
+
+    Postgres NO acepta 0x00 dentro de un `text` y psycopg2 corta la transacción
+    entera con "A string literal cannot contain NUL characters". Algunos títulos
+    y descripciones de Microsoft lo traen, y un solo producto envenenado tumbaba
+    la fase completa. Se limpia acá, que es el único embudo por donde pasan todas
+    las escrituras."""
+    if isinstance(v, str):
+        return v.replace("\x00", "") if "\x00" in v else v
+    if isinstance(v, list):
+        return [_clean(x) for x in v]
+    return v
+
+
 def _row(d: dict, cols: list[str]) -> tuple:
     out = []
     for c in cols:
         v = d.get(c)
         if c == "ratings" and isinstance(v, dict):
             v = json.dumps(v)
-        out.append(v)
+        out.append(_clean(v))
     return tuple(out)
 
 
