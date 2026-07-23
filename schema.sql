@@ -86,6 +86,63 @@ create table if not exists variants (
 );
 create index if not exists idx_variants_product on variants (product_id);
 
+-- ============ Disponibilidad por mercado (fuente: Emerald Browse) ============
+-- 1 fila por producto × mercado. NO reemplaza a `prices`: aporta las dimensiones
+-- que displaycatalog no da (Game Pass, popularidad, xCloud, handheld).
+-- `source` existe para que la tabla no quede atada a Browse: mañana otra fuente
+-- puede aportar disponibilidad de DLC/consumibles con el mismo esquema.
+-- Sin FK a products: Browse puede descubrir IDs que discovery todavía no cargó
+-- (justamente una de las cosas que queremos medir).
+create table if not exists market_catalog (
+    product_id       text not null,
+    market           text not null,
+    source           text not null default 'browse',
+    locale           text,
+    rank             int,             -- posición en el orden devuelto por la fuente
+    available_on     text[],          -- PC / XboxOne / XboxSeriesX / XCloud / Handheld
+    in_gamepass      boolean,
+    pass_ids         text[],          -- productIds de los passes que lo incluyen
+    -- OJO: passMetadataByPassProductId es el HISTORIAL de membresía, no el estado
+    -- actual. Estas dos columnas guardan solo fechas FUTURAS y no centinela:
+    pass_exit_date   timestamptz,     -- sale del pass (solo si HOY está en él)
+    pass_entry_date  timestamptz,     -- llega al pass (day-one anunciados)
+    on_xcloud        boolean,
+    on_handheld      boolean,
+    handheld_tier    int,             -- hhVerified.deviceEvaluation
+    badges           int[],
+    avg_rating       real,
+    rating_count     int,
+    -- Precio según la fuente. NO es el precio del read path (ese vive en `prices`):
+    -- se guarda para CONTRASTAR contra displaycatalog y detectar divergencias.
+    list_price       numeric(12,2),
+    msrp             numeric(12,2),
+    discount_pct     int,
+    currency         text,
+    seen_at          timestamptz default now(),
+    primary key (product_id, market, source)
+);
+create index if not exists idx_mktcat_market   on market_catalog (market);
+create index if not exists idx_mktcat_gamepass on market_catalog (market, in_gamepass)
+    where in_gamepass;
+create index if not exists idx_mktcat_rank     on market_catalog (market, rank);
+create index if not exists idx_mktcat_gp_coming on market_catalog (market, pass_entry_date)
+    where pass_entry_date is not null;
+
+-- ============ Relaciones entre productos (juego <-> DLC / bundle / edición) ============
+-- La pieza que falta para el catálogo completo: hoy el 51% de los productos
+-- (Durable/DLC) no tiene vínculo con su juego padre. Fuente principal:
+-- MarketProperties[0].RelatedProducts de displaycatalog (ya presente en el dump).
+-- Sin FK: el hijo puede aparecer antes que el padre según el orden de ingesta.
+create table if not exists product_relations (
+    parent_id   text not null,
+    child_id    text not null,
+    relation    text not null,        -- addon / bundle_item / edition / related
+    source      text,                 -- de dónde salió la relación
+    updated_at  timestamptz default now(),
+    primary key (parent_id, child_id, relation)
+);
+create index if not exists idx_prel_child on product_relations (child_id);
+
 -- ============ Tasas de cambio (para normalizar a USD) ============
 create table if not exists fx_rates (
     currency    text primary key,

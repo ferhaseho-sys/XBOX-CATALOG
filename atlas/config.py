@@ -50,6 +50,24 @@ PRICING_MARKETS = [
     "SA", "AE", "QA", "KW", "IL", "KZ",                # Medio Oriente/Asia central
 ]
 
+# Token para los endpoints de administracion (disparar ingesta, ver su estado).
+# Si queda VACIO, esos endpoints se DESHABILITAN (fail-closed): preferimos que el
+# panel no funcione a que quede abierto y cualquiera pueda disparar una ingesta
+# completa contra la DB.
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
+
+# --- Emerald (BFF de xbox.com) ---
+# Complementa a displaycatalog: aporta Game Pass, popularidad, xCloud y handheld,
+# que displaycatalog NO devuelve. Solo requiere el header MS-CV (sin auth).
+# OJO: indexa por LOCALE, no por mercado, asi que solo cubre los mercados que
+# tienen storefront en xbox.com (no los 243). El resto sigue via displaycatalog.
+EMERALD_BASE = os.environ.get("EMERALD_BASE", "https://emerald.xboxservices.com/xboxcomfd")
+# ResultsPerPage esta capado en 50 del lado del server (pedir mas no cambia nada).
+BROWSE_MAX_PAGES = int(os.environ.get("BROWSE_MAX_PAGES", "500"))   # corte de seguridad
+# Locales a barrer. Se empieza chico para validar; ampliar es agregar aca.
+BROWSE_LOCALES = [l.strip() for l in os.environ.get(
+    "BROWSE_LOCALES", "es-AR,en-US").split(",") if l.strip()]
+
 # Suscripciones conocidas que NO estan en los sitemaps de juegos (Xbox no las
 # sitemapea). Se siembran a mano; la lista se puede ampliar a medida que aparezcan.
 # (El discovery completo de subs seria recorrer los add-ons de cada juego.)

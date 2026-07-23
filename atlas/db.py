@@ -26,6 +26,14 @@ VARIANT_COLS = [
     "is_recurring", "purchasable", "currency", "list_price",
 ]
 
+MARKET_CATALOG_COLS = [
+    "product_id", "market", "source", "locale", "rank", "available_on",
+    "in_gamepass", "pass_ids", "pass_exit_date", "pass_entry_date",
+    "on_xcloud", "on_handheld",
+    "handheld_tier", "badges", "avg_rating", "rating_count",
+    "list_price", "msrp", "discount_pct", "currency",
+]
+
 
 def connect():
     if not config.DATABASE_URL:
@@ -87,6 +95,22 @@ def upsert_variants(conn, variants: list[dict]) -> int:
     return len(rows)
 
 
+def upsert_market_catalog(conn, rows: list[dict]) -> int:
+    """Disponibilidad por mercado (Emerald Browse). Tabla independiente: no toca
+    `products` ni `prices`."""
+    data = [_row(r, MARKET_CATALOG_COLS) for r in rows if r.get("product_id")]
+    if not data:
+        return 0
+    keys = ("product_id", "market", "source")
+    updates = ", ".join(f"{c}=excluded.{c}" for c in MARKET_CATALOG_COLS if c not in keys)
+    sql = (f"insert into market_catalog ({', '.join(MARKET_CATALOG_COLS)}) values %s "
+           f"on conflict (product_id, market, source) do update set {updates}, seen_at=now()")
+    with conn.cursor() as cur:
+        execute_values(cur, sql, data, page_size=500)
+    conn.commit()
+    return len(data)
+
+
 def known_product_ids(conn) -> set[str]:
     with conn.cursor() as cur:
         cur.execute("select product_id from products")
@@ -107,11 +131,18 @@ def products_for_market(conn, market: str) -> list[str]:
         return [r[0] for r in cur.fetchall()]
 
 
-def log_run(conn, phase: str, market: str | None, status: str, n: int = 0, detail: str = "") -> None:
+def log_run(conn, phase: str, market: str | None, status: str, n: int = 0,
+            detail: str = "", started_at=None) -> None:
+    """Registra una fase terminada.
+
+    `started_at` (datetime) es opcional pero IMPORTANTE: sin él, started_at toma
+    su default now() en el momento del insert y queda igual a finished_at, con lo
+    que toda duración da 0 y no hay forma de saber cuánto tarda una ingesta."""
     with conn.cursor() as cur:
         cur.execute(
-            "insert into ingest_runs (phase, market, status, n_products, finished_at, detail) "
-            "values (%s,%s,%s,%s, now(), %s)",
-            (phase, market, status, n, detail[:500]),
+            "insert into ingest_runs (phase, market, status, n_products, "
+            "started_at, finished_at, detail) "
+            "values (%s,%s,%s,%s, coalesce(%s, now()), now(), %s)",
+            (phase, market, status, n, started_at, detail[:500]),
         )
     conn.commit()

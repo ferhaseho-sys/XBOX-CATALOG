@@ -5,13 +5,18 @@ Uso:
   python -m atlas.run_ingest metadata               # rellena metadata de products
   python -m atlas.run_ingest pricing                # precios en TODOS los mercados
   python -m atlas.run_ingest pricing US GB JP NG    # precios solo en esos mercados
+  python -m atlas.run_ingest browse                 # Emerald: disponibilidad por mercado
+  python -m atlas.run_ingest browse es-AR en-US     # solo esos locales
   python -m atlas.run_ingest all                    # las tres fases seguidas
+
+`browse` es independiente: escribe en `market_catalog` y no toca products/prices.
 
 Es resumible: cada fase hace upsert idempotente y registra en ingest_runs.
 """
 from __future__ import annotations
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 import time
 from . import config, db
 from .http_client import CatalogClient
@@ -61,6 +66,7 @@ def phase_pricing(conn, client, markets):
     que cada fila es de un mercado distinto). Evita la cola de espera por mercados
     grandes que tenia el modelo 1-worker-por-mercado."""
     t0 = time.monotonic()
+    t_start = datetime.now(timezone.utc)     # reloj de pared, para medir duraciones
     # 1) armar todas las tareas (market, chunk) leyendo los ids una vez por mercado
     tasks = []
     pending = {}   # market -> lotes restantes
@@ -94,13 +100,18 @@ def phase_pricing(conn, client, markets):
             done_lotes += 1
             pending[m] -= 1
             if pending[m] == 0:                        # mercado completo -> log
-                db.log_run(conn, "pricing", m, "done", counts[m])
+                db.log_run(conn, "pricing", m, "done", counts[m], started_at=t_start)
                 print(f"[pricing] {m}: {counts[m]} precios", flush=True)
             if done_lotes % 25 == 0:
                 dt = time.monotonic() - t0
                 print(f"[pricing] {done_lotes}/{len(tasks)} lotes, "
                       f"{total_rows} precios, {dt:.0f}s", flush=True)
     dt = time.monotonic() - t0
+    # fila resumen de TODA la fase (market=None): es la que responde
+    # "¿cuánto tarda el refresh?" y si entra en la ventana del cron.
+    db.log_run(conn, "pricing", None, "done", total_rows,
+               f"{len(pending)} mercados, {len(tasks)} lotes, {dt:.0f}s",
+               started_at=t_start)
     print(f"[pricing] LISTO: {total_rows} precios en {dt:.0f}s "
           f"({len(tasks)} lotes)", flush=True)
 
@@ -110,6 +121,11 @@ def main(argv):
         print(__doc__)
         return
     phase = argv[0]
+    # browse indexa por LOCALE ('es-AR'), no por mercado: delega tal cual
+    if phase == "browse":
+        from . import browse
+        browse.main(argv[1:])
+        return
     # sin mercados explicitos => set representativo por moneda (~50), no los 243
     markets = [m.upper() for m in argv[1:]] or config.PRICING_MARKETS
     client = CatalogClient(rate=config.REQ_RATE)
