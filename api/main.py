@@ -4,12 +4,28 @@ Arranque local:  uvicorn api.main:app --reload
 Railway:         uvicorn api.main:app --host 0.0.0.0 --port $PORT
 """
 from __future__ import annotations
+import secrets
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from atlas import config
 from . import queries as Q
+
+
+def require_admin(x_admin_token: str = Header(default="")) -> None:
+    """Protege los endpoints que ESCRIBEN o disparan trabajo pesado.
+
+    Fail-closed: sin ADMIN_TOKEN configurado el endpoint responde 503 en vez de
+    quedar abierto. Una ingesta completa puede tumbar la DB del free-tier, así
+    que el modo inseguro no debe ser el default.
+    `compare_digest` evita filtrar el token por diferencias de tiempo."""
+    if not config.ADMIN_TOKEN:
+        raise HTTPException(503, "Endpoint de administración deshabilitado: "
+                                 "falta configurar ADMIN_TOKEN.")
+    if not secrets.compare_digest(x_admin_token, config.ADMIN_TOKEN):
+        raise HTTPException(401, "Token de administración inválido o ausente.")
 
 app = FastAPI(title="Xbox Price Atlas", version="0.1.0")
 
@@ -61,17 +77,19 @@ def _run_analysis(markets=None):
         _ingest["running"] = False
 
 
-@app.post("/api/analysis/start")
+@app.post("/api/analysis/start", dependencies=[Depends(require_admin)])
 def analysis_start():
-    """Dispara el análisis completo del catálogo (sitemaps + precios)."""
+    """Dispara el análisis completo del catálogo (sitemaps + precios). SOLO ADMIN."""
     if _ingest["running"]:
         return {"status": "already_running", **_ingest}
     threading.Thread(target=_run_analysis, daemon=True).start()
     return {"status": "started"}
 
 
-@app.get("/api/analysis/status")
+@app.get("/api/analysis/status", dependencies=[Depends(require_admin)])
 def analysis_status():
+    """SOLO ADMIN: `detail` puede traer el texto de una excepción (con datos de
+    conexión), así que no se expone públicamente."""
     return _ingest
 
 
