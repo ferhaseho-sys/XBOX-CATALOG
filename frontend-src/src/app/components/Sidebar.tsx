@@ -3,6 +3,7 @@ import {
   CreditCard, HelpCircle, Globe, Search, BarChart3, TrendingUp, Newspaper,
   MessageSquare, Coffee, Share2, FileSpreadsheet, Zap,
 } from 'lucide-react';
+import { isAdmin } from '../lib/admin';
 
 export type NavItem = {
   key: string;
@@ -10,6 +11,8 @@ export type NavItem = {
   icon: any;
   kind: 'catalog' | 'view' | 'soon';
   preset?: string;
+  /** Solo para admin: el público no lo ve. La API igual rechaza sin token. */
+  admin?: boolean;
 };
 
 // Grupos del sidebar, estilo xbox-now. Los "soon" no tienen datos aún.
@@ -35,14 +38,17 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { key: 'history', label: 'Historial', icon: LineChart, kind: 'view' },
     ],
   },
+  // Todo lo de acá es interno: panel de control e integraciones de venta.
+  // No es parte del sitio público, que solo muestra el catálogo.
   {
-    title: 'Integraciones',
+    title: 'Administración',
     items: [
-      { key: 'gameflip', label: 'Gameflip', icon: Gamepad2, kind: 'view' },
-      { key: 'kofi', label: 'Ko-fi', icon: Coffee, kind: 'view' },
-      { key: 'social', label: 'Social', icon: Share2, kind: 'view' },
-      { key: 'sheets', label: 'Sheets', icon: FileSpreadsheet, kind: 'view' },
-      { key: 'bulk', label: 'Bulk Upload', icon: Package, kind: 'view' },
+      { key: 'admin', label: 'Panel de control', icon: Zap, kind: 'view', admin: true },
+      { key: 'gameflip', label: 'Gameflip', icon: Gamepad2, kind: 'view', admin: true },
+      { key: 'kofi', label: 'Ko-fi', icon: Coffee, kind: 'view', admin: true },
+      { key: 'social', label: 'Social', icon: Share2, kind: 'view', admin: true },
+      { key: 'sheets', label: 'Sheets', icon: FileSpreadsheet, kind: 'view', admin: true },
+      { key: 'bulk', label: 'Bulk Upload', icon: Package, kind: 'view', admin: true },
     ],
   },
   {
@@ -71,10 +77,14 @@ export function Sidebar({ active, onSelect }: { active: string; onSelect: (it: N
         <div className="font-bold leading-tight">Xbox Price<br />Atlas</div>
       </div>
       <nav className="py-2">
-        {NAV_GROUPS.map((g) => (
+        {NAV_GROUPS.map((g) => {
+          // sin token de admin, los grupos internos ni se dibujan
+          const items = g.items.filter((it) => !it.admin || isAdmin());
+          if (items.length === 0) return null;
+          return (
           <div key={g.title} className="mb-2">
             <div className="px-4 py-1.5 text-[0.7rem] uppercase tracking-wider text-muted-foreground">{g.title}</div>
-            {g.items.map((it) => {
+            {items.map((it) => {
               const Icon = it.icon;
               const isActive = active === it.key;
               const soon = it.kind === 'soon';
@@ -95,7 +105,8 @@ export function Sidebar({ active, onSelect }: { active: string; onSelect: (it: N
               );
             })}
           </div>
-        ))}
+          );
+        })}
       </nav>
     </aside>
   );

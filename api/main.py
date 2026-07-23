@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from atlas import config
 from . import queries as Q
+from .admin import router as admin_router
 
 
 def require_admin(x_admin_token: str = Header(default="")) -> None:
@@ -36,6 +37,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Panel de administración. Se monta ENTERO detrás del token: ninguna de sus
+# rutas es pública. Va antes del catch-all que sirve la SPA (ver el final).
+app.include_router(admin_router, dependencies=[Depends(require_admin)])
 
 WEB = Path(__file__).resolve().parent.parent / "web"
 

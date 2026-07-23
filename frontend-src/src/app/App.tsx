@@ -3,7 +3,6 @@ import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
 import { Moon, Sun, Settings, Monitor } from 'lucide-react';
 
-import { ScrapingControls } from './components/ScrapingControls';
 import { StatsCharts } from './components/StatsCharts';
 import { GoogleSheetsIntegration } from './components/GoogleSheetsIntegration';
 import { SocialMediaIntegration } from './components/SocialMediaIntegration';
@@ -19,7 +18,7 @@ import { GameCards } from './components/GameCards';
 import { ProductDetail } from './components/ProductDetail';
 import { Sidebar, NAV_GROUPS, NavItem } from './components/Sidebar';
 import { useScraper } from './hooks/useScraper';
-import { isAdmin } from './lib/admin';
+import { AdminPanel } from './components/AdminPanel';
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(true);
@@ -35,10 +34,9 @@ export default function App() {
   const [productId, setProductId] = useState<string | null>(initialPid);
   const openProduct = (id: string) => window.open(`/product/${id}`, '_blank', 'noopener');
 
-  const {
-    games, selectedGames, regionStats, priceHistory, progress,
-    startScraping, pauseScraping, stopScraping,
-  } = useScraper();
+  // start/pause/stop ya no se usan acá: la ingesta la dispara AdminPanel contra
+  // /api/admin/jobs. Queda `progress` para el badge de estado del encabezado.
+  const { games, selectedGames, regionStats, priceHistory, progress } = useScraper();
 
   useEffect(() => {
     if (window.electronAPI) {
@@ -60,6 +58,7 @@ export default function App() {
     if (productId) return <ProductDetail productId={productId} onBack={() => { window.location.href = '/'; }} onOpen={openProduct} />;
     if (sel.kind === 'catalog') return <GameCards initialPreset={sel.preset || ''} title={sel.label} onOpen={openProduct} />;
     switch (sel.key) {
+      case 'admin': return <AdminPanel />;
       case 'regional': return <RegionalPriceExplorer />;
       case 'viewer': return <XboxProductViewer />;
       case 'variants': return <VariantExplorer />;
@@ -107,16 +106,8 @@ export default function App() {
           </header>
 
           <main className="px-4 sm:px-6 py-5 space-y-5">
-            {/* Actualizar catálogo: SOLO ADMIN. El público ve únicamente el catálogo;
-                la ingesta es una herramienta interna. La API igual rechaza sin token. */}
-            {sel.kind === 'catalog' && !productId && isAdmin() && (
-              <ScrapingControls
-                progress={progress}
-                onStartScraping={startScraping}
-                onPauseScraping={pauseScraping}
-                onStopScraping={stopScraping}
-              />
-            )}
+            {/* La ingesta ya NO cuelga del catálogo: vive en Administración >
+                Panel de control, que es su lugar. Acá solo va el contenido. */}
             {renderContent()}
           </main>
         </div>
