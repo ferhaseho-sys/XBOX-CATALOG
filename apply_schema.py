@@ -19,7 +19,7 @@ def main() -> int:
     try:
         conn = db.connect()
     except psycopg2.OperationalError as e:
-        print(f"❌ No se pudo conectar: {str(e).strip()[:100]}")
+        print(f"FALLA: No se pudo conectar: {str(e).strip()[:100]}")
         print("   Revisá que DATABASE_URL apunte a la base nueva y que esté arriba.")
         return 2
     try:
@@ -33,7 +33,7 @@ def main() -> int:
                         "('products','prices','price_history','market_catalog',"
                         "'variants','deals','fx_rates','ingest_runs','product_relations')")
             n = cur.fetchone()[0]
-        print(f"✅ schema aplicado — {n}/9 tablas principales presentes")
+        print(f"OK: schema aplicado - {n}/9 tablas principales presentes")
         return 0
     finally:
         conn.close()

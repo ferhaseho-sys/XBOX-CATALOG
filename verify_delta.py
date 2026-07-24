@@ -1,104 +1,121 @@
-"""Verifica el delta de `upsert_prices` contra la DB real. No destructivo.
+"""Verifica el delta de `upsert_prices` contra Postgres real.
 
-REQUISITO: la migración `sql/fase2_price_history.sql` ya aplicada (en el SQL
-Editor de Supabase) y la base en verde. Este script NO aplica el esquema: correr
-DDL pesado por el pooler bajo carga es lo que satura la base.
+AUTOSUFICIENTE: crea su propio producto de prueba, lo usa, y lo borra al final.
+No lee ni toca datos reales, así que corre igual con la base vacía o llena.
 
-Prueba las tres cosas que importan:
-  1. Re-guardar precios SIN cambios no escribe nada  (el 98% de ahorro de IO).
-  2. Un cambio real sí se escribe y deja fila en price_history.
-  3. min_ever / is_at_min se mantienen solos.
-Al final restaura el valor original del producto que tocó.
+Prueba las cuatro cosas que importan:
+  1. Insertar precios nuevos.
+  2. Re-guardar SIN cambios no escribe nada  -> el 98% de ahorro de IO.
+  3. Un cambio real se escribe y deja fila en price_history.
+  4. min_ever / min_ever_on / is_at_min se mantienen solos, y un precio que SUBE
+     no pisa el mínimo histórico.
 
 Uso:  python verify_delta.py
 """
 import sys
+from datetime import date
 
 import psycopg2
 
 from atlas import db
 
+PID = "__TESTDELTA"       # id reservado; no colisiona con los de Microsoft (12 hex)
+MKT = "AR"
 
-def _preflight(conn) -> bool:
-    """Chequea que la migración esté aplicada, sin tocar datos."""
+
+def _limpiar(conn) -> None:
     with conn.cursor() as cur:
-        cur.execute("select column_name from information_schema.columns "
-                    "where table_name='prices' and column_name in "
-                    "('min_ever','is_at_min')")
-        cols = {r[0] for r in cur.fetchall()}
-        cur.execute("select to_regclass('price_history')")
-        tabla = cur.fetchone()[0]
-    if len(cols) < 2 or tabla is None:
-        print("❌ Falta la migración. Pegá sql/fase2_price_history.sql en el "
-              "SQL Editor de Supabase y volvé a correr esto.")
-        return False
-    return True
+        cur.execute("delete from price_history where product_id = %s", (PID,))
+        cur.execute("delete from prices        where product_id = %s", (PID,))
+        cur.execute("delete from products      where product_id = %s", (PID,))
+    conn.commit()
+
+
+def _precio(valor: float) -> dict:
+    return {"product_id": PID, "market": MKT, "purchasable": True, "currency": "ARS",
+            "list_price": valor, "msrp": valor, "discount_pct": 0, "on_sale": False,
+            "sale_ends": None, "is_free": False, "n_paid_offers": 1, "recurrence": None}
+
+
+def _estado(conn):
+    with conn.cursor() as cur:
+        cur.execute("select list_price, min_ever, min_ever_on, is_at_min from prices "
+                    "where product_id=%s and market=%s", (PID, MKT))
+        fila = cur.fetchone()
+        cur.execute("select count(*) from price_history where product_id=%s", (PID,))
+        n_hist = cur.fetchone()[0]
+    return fila, n_hist
 
 
 def main() -> int:
     try:
         conn = db.connect()
     except psycopg2.OperationalError as e:
-        print(f"❌ No se pudo conectar: {str(e).strip()[:90]}")
-        print("   La base está caída o saturada. Esperá a que Supabase esté en "
-              "verde (Database Healthy) y volvé a intentar. NO reintentes en loop.")
+        print(f"FALLA: No se pudo conectar: {str(e).strip()[:100]}")
+        print("   Revisá DATABASE_URL (desde tu PC va la URL PÚBLICA).")
         return 2
 
+    fallas = []
     try:
-        if not _preflight(conn):
+        with conn.cursor() as cur:
+            cur.execute("select to_regclass('price_history'), "
+                        "(select count(*) from information_schema.columns "
+                        " where table_name='prices' and column_name in ('min_ever','is_at_min'))")
+            tabla, n_cols = cur.fetchone()
+        if tabla is None or n_cols < 2:
+            print("FALLA: Falta la migración. Corré `python apply_schema.py` primero.")
             return 1
 
-        with conn.cursor() as cur:
-            cur.execute("select product_id, market, currency, list_price, msrp, "
-                        "discount_pct, on_sale, sale_ends, is_free, n_paid_offers, "
-                        "recurrence from prices where market = 'AR' "
-                        "and list_price > 0 limit 5")
-            cols = [d[0] for d in cur.description]
-            filas = [dict(zip(cols, r)) for r in cur.fetchall()]
-        if not filas:
-            print("no hay precios en AR para probar"); return 1
-        for f in filas:
-            f["purchasable"] = True
-        print(f"muestra: {len(filas)} filas de AR")
+        _limpiar(conn)
+        db.upsert_products(conn, [{"product_id": PID, "title": "Producto de prueba",
+                                   "kind": "Juego"}])
 
-        print("1) re-guardando SIN cambios…")
-        n, cambios = db.upsert_prices(conn, filas)
-        print(f"   filas={n}  cambios={cambios}")
+        print("1) insertando precio nuevo (1000)…")
+        n, cambios = db.upsert_prices(conn, [_precio(1000)])
+        (lp, mn, mn_on, at_min), n_hist = _estado(conn)
+        print(f"   precio={lp}  min_ever={mn}  is_at_min={at_min}  historial={n_hist}")
+        if not (float(lp) == 1000 and float(mn) == 1000 and at_min):
+            fallas.append("el insert no sembró bien el mínimo")
+
+        print("2) re-guardando el MISMO precio…")
+        n, cambios = db.upsert_prices(conn, [_precio(1000)])
+        print(f"   cambios detectados = {cambios}")
         if cambios != 0:
-            print("   ❌ debería ser 0: el `where … is distinct from` no filtra.")
-            return 1
-        print("   ✅ cero escrituras — este es el ahorro de IO")
+            fallas.append(f"debería ser 0 cambios y dio {cambios}: el "
+                          "`where … is distinct from` no filtra (sin ahorro de IO)")
+        else:
+            print("   OK: cero escrituras - este es el ahorro de IO")
 
-        print("2) bajando un precio a la mitad…")
-        objetivo = dict(filas[0]); original = objetivo["list_price"]
-        objetivo["list_price"] = float(original) / 2
-        n, cambios = db.upsert_prices(conn, [objetivo])
-        pid, mkt = objetivo["product_id"], objetivo["market"]
-        with conn.cursor() as cur:
-            cur.execute("select list_price, min_ever, is_at_min from prices "
-                        "where product_id=%s and market=%s", (pid, mkt))
-            lp, mn, at_min = cur.fetchone()
-            cur.execute("select count(*) from price_history "
-                        "where product_id=%s and market=%s", (pid, mkt))
-            n_hist = cur.fetchone()[0]
+        print("3) bajando el precio a 400…")
+        n, cambios = db.upsert_prices(conn, [_precio(400)])
+        (lp, mn, mn_on, at_min), n_hist = _estado(conn)
+        print(f"   cambios={cambios}  precio={lp}  min_ever={mn}  min_ever_on={mn_on}  "
+              f"is_at_min={at_min}  historial={n_hist}")
+        if cambios != 1:
+            fallas.append("una baja de precio no se detectó como cambio")
+        if not (float(mn) == 400 and at_min and mn_on == date.today()):
+            fallas.append("la baja no actualizó el mínimo histórico")
+        if n_hist < 1:
+            fallas.append("la baja no dejó fila en price_history")
+
+        print("4) subiendo el precio a 900 (el mínimo NO debe moverse)…")
+        n, cambios = db.upsert_prices(conn, [_precio(900)])
+        (lp, mn, mn_on, at_min), n_hist = _estado(conn)
         print(f"   cambios={cambios}  precio={lp}  min_ever={mn}  is_at_min={at_min}  "
               f"historial={n_hist}")
-        ok = (cambios == 1 and n_hist >= 1 and at_min and float(mn) == float(lp))
-        print("   ✅ historial y mínimo OK" if ok else "   ❌ falla en historial/mínimo")
+        if float(mn) != 400:
+            fallas.append(f"una SUBA pisó el mínimo histórico (quedó {mn}, debía ser 400)")
+        if at_min:
+            fallas.append("is_at_min quedó en true con el precio por encima del mínimo")
 
-        print("3) restaurando…")
-        objetivo["list_price"] = original
-        db.upsert_prices(conn, [objetivo])
-        with conn.cursor() as cur:
-            cur.execute("delete from price_history where product_id=%s and market=%s",
-                        (pid, mkt))
-            cur.execute("update prices set min_ever=%s, is_at_min=true "
-                        "where product_id=%s and market=%s", (original, pid, mkt))
-        conn.commit()
-        print(f"   restaurado a {original}")
-        return 0 if ok else 1
+        print("\n" + ("FALLA: FALLAS:" if fallas else "OK: TODO OK - el delta funciona"))
+        for f in fallas:
+            print("   -", f)
+        return 1 if fallas else 0
     finally:
+        _limpiar(conn)
         conn.close()
+        print("(datos de prueba borrados)")
 
 
 if __name__ == "__main__":
