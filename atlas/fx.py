@@ -7,6 +7,7 @@ Uso:
   python -m atlas.fx            # refresca tasas y recalcula price_usd
 """
 from __future__ import annotations
+from datetime import datetime, timezone
 import requests
 from . import db
 
@@ -58,12 +59,16 @@ def recalc_price_usd(conn) -> int:
 
 def main():
     conn = db.connect()
+    t0 = datetime.now(timezone.utc)
     try:
         rates = fetch_rates()
         n = upsert_rates(conn, rates)
         print(f"[fx] {n} tasas actualizadas")
         m = recalc_price_usd(conn)
         print(f"[fx] {m} filas de prices con price_usd recalculado")
+        # queda registrado para que el panel sepa qué tan fresco está
+        db.log_run(conn, "fx", None, "done", n, f"{m} filas con price_usd",
+                   started_at=t0)
     finally:
         conn.close()
 

@@ -7,6 +7,7 @@ free-tier). Correr después de pricing + fx.
 Uso:  python -m atlas.deals
 """
 from __future__ import annotations
+from datetime import datetime, timezone
 from . import db
 
 DDL = """
@@ -68,6 +69,7 @@ update products set is_free = false where kind is distinct from 'Juego';
 
 def main():
     conn = db.connect()
+    t0 = datetime.now(timezone.utc)
     try:
         with conn.cursor() as cur:
             cur.execute(DDL)
@@ -80,6 +82,8 @@ def main():
             cur.execute(FREE_FLAG)
             conn.commit()
             print("[deals] products.is_free recalculado")
+        # queda registrado para que el panel sepa qué tan fresco está
+        db.log_run(conn, "deals", None, "done", n, started_at=t0)
     finally:
         conn.close()
 
